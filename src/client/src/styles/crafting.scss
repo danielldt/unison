@@ -1,0 +1,335 @@
+@import './variables.scss';
+
+.crafting-page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  
+  .crafting-header {
+    padding: 1rem;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    
+    h1 {
+      margin: 0;
+      margin-bottom: 1rem;
+      font-size: 1.5rem;
+    }
+    
+    .crafting-tabs {
+      display: flex;
+      gap: 0.5rem;
+      
+      button {
+        padding: 0.5rem 1rem;
+        background-color: rgba(255, 255, 255, 0.1);
+        border: none;
+        border-radius: 0.25rem;
+        color: white;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        
+        &:hover {
+          background-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        &.active {
+          background-color: var(--primary-color);
+        }
+      }
+    }
+  }
+  
+  .crafting-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+    height: calc(100vh - 200px);
+    overflow: auto;
+    
+    @media (min-width: $tablet) {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+    
+    h2 {
+      margin: 0;
+      margin-bottom: 1rem;
+      font-size: 1.2rem;
+      color: white;
+    }
+    
+    .materials-section {
+      background-color: rgba(0, 0, 0, 0.5);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      flex: 1;
+      
+      @media (min-width: $tablet) {
+        min-width: 300px;
+        width: 50%;
+      }
+      
+      .materials-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+        gap: 0.5rem;
+        height: 300px;
+        overflow-y: auto;
+        
+        .material-card {
+          width: 70px;
+          height: 70px;
+          background-color: rgba(0, 0, 0, 0.7);
+          border-radius: 0.25rem;
+          cursor: pointer;
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 0.25rem;
+          border: 1px solid transparent;
+          transition: border-color 0.2s;
+          
+          &:hover {
+            border-color: rgba(255, 255, 255, 0.5);
+          }
+          
+          &.selected {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 8px var(--primary-color);
+          }
+          
+          .material-rarity {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            border-radius: 0.25rem 0.25rem 0 0;
+            
+            &.rarity-f { background-color: var(--rarity-f); }
+            &.rarity-e { background-color: var(--rarity-e); }
+            &.rarity-d { background-color: var(--rarity-d); }
+            &.rarity-c { background-color: var(--rarity-c); }
+            &.rarity-b { background-color: var(--rarity-b); }
+            &.rarity-a { background-color: var(--rarity-a); }
+            &.rarity-s { background-color: var(--rarity-s); }
+            &.rarity-ss { background-color: var(--rarity-ss); }
+            &.rarity-sss { background-color: var(--rarity-sss); }
+          }
+          
+          .material-image {
+            font-size: 1.8rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.25rem;
+            color: white;
+          }
+          
+          .material-name {
+            font-size: 0.6rem;
+            text-align: center;
+            color: white;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            width: 100%;
+          }
+        }
+      }
+    }
+    
+    .crafting-station {
+      background-color: rgba(0, 0, 0, 0.5);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      
+      @media (min-width: $tablet) {
+        min-width: 300px;
+        width: 45%;
+      }
+      
+      .instruction {
+        text-align: center;
+        color: #bdc3c7;
+        margin-bottom: 1.5rem;
+      }
+      
+      .crafting-slots {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+        
+        .crafting-slot {
+          width: 80px;
+          height: 80px;
+          background-color: rgba(255, 255, 255, 0.1);
+          border: 2px dashed #bdc3c7;
+          border-radius: 0.25rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          
+          .empty-slot {
+            font-size: 2rem;
+            color: #bdc3c7;
+            opacity: 0.5;
+          }
+          
+          .material-preview {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            
+            .material-image {
+              font-size: 2rem;
+              color: white;
+            }
+            
+            .material-name {
+              font-size: 0.7rem;
+              text-align: center;
+              color: white;
+              overflow: hidden;
+              white-space: nowrap;
+              text-overflow: ellipsis;
+              width: 90%;
+            }
+            
+            &.rarity-f { background-color: rgba(158, 158, 158, 0.3); }
+            &.rarity-e { background-color: rgba(165, 214, 167, 0.3); }
+            &.rarity-d { background-color: rgba(144, 202, 249, 0.3); }
+            &.rarity-c { background-color: rgba(206, 147, 216, 0.3); }
+            &.rarity-b { background-color: rgba(255, 204, 128, 0.3); }
+            &.rarity-a { background-color: rgba(239, 154, 154, 0.3); }
+            &.rarity-s { background-color: rgba(179, 157, 219, 0.3); }
+            &.rarity-ss { background-color: rgba(129, 212, 250, 0.3); }
+            &.rarity-sss { background-color: rgba(255, 241, 118, 0.3); }
+          }
+        }
+      }
+      
+      .craft-button {
+        padding: 0.75rem 2rem;
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        border-radius: 0.25rem;
+        font-size: 1.1rem;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        width: 80%;
+        
+        &:hover:not(:disabled) {
+          background-color: var(--primary-dark);
+        }
+        
+        &:disabled {
+          background-color: #95a5a6;
+          cursor: not-allowed;
+        }
+      }
+    }
+    
+    .craft-result {
+      background-color: rgba(0, 0, 0, 0.5);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      
+      @media (min-width: $tablet) {
+        width: 100%;
+      }
+      
+      .result-item {
+        padding: 1rem;
+        background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 0.5rem;
+        text-align: center;
+        max-width: 300px;
+        width: 100%;
+        animation: item-reveal 0.8s ease-out;
+        
+        &.rarity-f { box-shadow: 0 0 15px rgba(158, 158, 158, 0.5); }
+        &.rarity-e { box-shadow: 0 0 15px rgba(165, 214, 167, 0.5); }
+        &.rarity-d { box-shadow: 0 0 15px rgba(144, 202, 249, 0.5); }
+        &.rarity-c { box-shadow: 0 0 15px rgba(206, 147, 216, 0.5); }
+        &.rarity-b { box-shadow: 0 0 15px rgba(255, 204, 128, 0.5); }
+        &.rarity-a { box-shadow: 0 0 15px rgba(239, 154, 154, 0.5); }
+        &.rarity-s { box-shadow: 0 0 15px rgba(179, 157, 219, 0.5); }
+        &.rarity-ss { box-shadow: 0 0 15px rgba(129, 212, 250, 0.5); }
+        &.rarity-sss { box-shadow: 0 0 15px rgba(255, 241, 118, 0.8); }
+        
+        .item-image {
+          font-size: 3rem;
+          margin-bottom: 0.5rem;
+          color: white;
+        }
+        
+        .item-name {
+          font-size: 1.2rem;
+          color: white;
+          margin-bottom: 0.25rem;
+          
+          &.rarity-f { color: var(--rarity-f); }
+          &.rarity-e { color: var(--rarity-e); }
+          &.rarity-d { color: var(--rarity-d); }
+          &.rarity-c { color: var(--rarity-c); }
+          &.rarity-b { color: var(--rarity-b); }
+          &.rarity-a { color: var(--rarity-a); }
+          &.rarity-s { color: var(--rarity-s); }
+          &.rarity-ss { color: var(--rarity-ss); }
+          &.rarity-sss { color: var(--rarity-sss); }
+        }
+        
+        .item-type {
+          font-size: 0.9rem;
+          color: #bdc3c7;
+          margin-bottom: 1rem;
+        }
+        
+        .item-stats {
+          text-align: left;
+          
+          .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0;
+            color: white;
+            
+            .stat-name {
+              color: #bdc3c7;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@keyframes item-reveal {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+} 
