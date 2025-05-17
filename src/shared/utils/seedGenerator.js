@@ -105,63 +105,117 @@ function generateDungeonSeed(options = {}) {
 
 /**
  * A seedable random number generator
- * @param {number} seed - Seed for RNG
+ * @param {number|Object} seed - Seed for RNG (can be number or seed object)
  * @returns {function} - Random number generator function
  */
-function seededRandom(seed) {
-  let _seed = seed % 2147483647;
+function createSeededRNG(seed) {
+  // If seed is an object, extract the baseSeed
+  let _seed;
+  if (typeof seed === 'object' && seed !== null) {
+    _seed = seed.baseSeed || Date.now();
+  } else {
+    _seed = seed || Date.now();
+  }
+  
+  _seed = _seed % 2147483647;
   if (_seed <= 0) _seed += 2147483646;
   
-  return function() {
-    _seed = _seed * 16807 % 2147483647;
-    return (_seed - 1) / 2147483646;
+  return {
+    _seed,
+    
+    // Get next float in range [0, 1)
+    nextFloat() {
+      this._seed = (this._seed * 16807) % 2147483647;
+      return (this._seed - 1) / 2147483646;
+    },
+    
+    // Get next integer in range [min, max] (inclusive)
+    nextInt(min, max) {
+      return Math.floor(this.nextFloat() * (max - min + 1)) + min;
+    },
+    
+    // Choose random item from array
+    choose(array) {
+      if (!array || array.length === 0) return null;
+      return array[this.nextInt(0, array.length - 1)];
+    },
+    
+    // Weighted random selection
+    weightedChoice(options, weights) {
+      if (!options || !weights || options.length !== weights.length) {
+        throw new Error('Options and weights must be arrays of the same length');
+      }
+      
+      const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+      let choice = this.nextFloat() * totalWeight;
+      
+      for (let i = 0; i < options.length; i++) {
+        choice -= weights[i];
+        if (choice <= 0) {
+          return options[i];
+        }
+      }
+      
+      // Fallback
+      return options[0];
+    }
   };
 }
 
 /**
  * Get a random integer between min and max (inclusive) using seeded RNG
- * @param {function} randomFunc - Seeded random function
+ * @param {Object} rng - Seeded random function object
  * @param {number} min - Minimum value (inclusive)
  * @param {number} max - Maximum value (inclusive)
  * @returns {number} - Random integer
  */
-function getRandomInt(randomFunc, min, max) {
-  min = Math.ceil(min);
-  max = Math.floor(max);
-  return Math.floor(randomFunc() * (max - min + 1)) + min;
+function getRandomInt(rng, min, max) {
+  if (!rng || typeof rng.nextInt !== 'function') {
+    // Fallback to non-seeded random if no proper RNG provided
+    min = Math.ceil(min);
+    max = Math.floor(max);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+  
+  return rng.nextInt(min, max);
 }
 
 /**
  * Get a weighted random item from an array
- * @param {function} randomFunc - Seeded random function
+ * @param {Object} rng - Seeded random function object
  * @param {Array} items - Array of items to choose from
  * @param {Array} weights - Array of weights (same length as items)
  * @returns {*} - Randomly selected item
  */
-function getWeightedRandom(randomFunc, items, weights) {
-  if (items.length === 0) return null;
-  if (items.length !== weights.length) {
-    throw new Error('Items and weights must have the same length');
+function getWeightedRandom(rng, items, weights) {
+  if (!items || !weights || items.length === 0 || items.length !== weights.length) {
+    if (items && items.length > 0) return items[0]; // Fallback to first item
+    return null;
   }
   
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  const randomValue = randomFunc() * totalWeight;
-  
-  let cumulativeWeight = 0;
-  for (let i = 0; i < items.length; i++) {
-    cumulativeWeight += weights[i];
-    if (randomValue <= cumulativeWeight) {
-      return items[i];
+  if (!rng || typeof rng.weightedChoice !== 'function') {
+    // Fallback to non-seeded weighted random
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    const randomValue = Math.random() * totalWeight;
+    
+    let cumulativeWeight = 0;
+    for (let i = 0; i < items.length; i++) {
+      cumulativeWeight += weights[i];
+      if (randomValue <= cumulativeWeight) {
+        return items[i];
+      }
     }
+    
+    return items[items.length - 1]; // Fallback
   }
   
-  return items[items.length - 1]; // Fallback
+  return rng.weightedChoice(items, weights);
 }
 
 module.exports = {
   generateSeedFromString,
   generateDungeonSeed,
-  seededRandom,
+  createSeededRNG,
   getRandomInt,
   getWeightedRandom
 }; 

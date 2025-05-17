@@ -1,205 +1,269 @@
-const { Room } = require('colyseus');const { generateDungeon } = require('../../shared/utils/dungeonGenerator');const { generateEnvironmentalEffects, applyEnvironmentalEffects } = require('../../shared/utils/environmentalEffects');const { calculateDamage, calculateHealing } = require('../../shared/utils/combatCalculator');const { generateMobLoot, calculateMobExperience, calculateMobGold } = require('../utils/mobDrop');const db = require('../db/database');
+const { Room } = require('colyseus');
+const { generateDungeonSeed, createSeededRNG, getRandomInt, getWeightedRandom } = require('../../shared/utils/seedGenerator');
+const { generateDungeon } = require('../../shared/utils/dungeonGenerator');
+const { generateEnvironmentalEffects, applyEnvironmentalEffects } = require('../../shared/utils/environmentalEffects');
+const { calculateDamage, calculateHealing } = require('../../shared/utils/combatCalculator');
+const { generateMobLoot, calculateMobExperience, calculateMobGold } = require('../utils/mobDrop');
+const db = require('../db/database');
 
 // Define game state schema
-class DungeonState {  constructor() {    this.players = new Map();    this.currentWave = 0;    this.waveInProgress = false;    this.mobs = [];    this.dungeon = null;    this.combatLog = [];    this.loot = [];    this.environment = null;    this.environmentalHazards = [];    this.lastEnvironmentTick = Date.now();  }}
+class DungeonState {
+  constructor() {
+    this.players = new Map();
+    this.currentWave = 0;
+    this.waveInProgress = false;
+    this.mobs = [];
+    this.dungeon = null;
+    this.combatLog = [];
+    this.loot = [];
+    this.environment = null;
+    this.environmentalHazards = [];
+    this.lastEnvironmentTick = Date.now();
+  }
+}
+
+// DungeonRoom schema class for Colyseus
+class DungeonRoomState {
+  constructor() {
+    this.players = new Map();
+    this.mobs = [];
+    this.loot = [];
+    this.currentWave = 0;
+    this.totalWaves = 5;
+    this.waveInProgress = false;
+    this.seed = '';
+    this.dungeonType = 'normal';
+    this.difficulty = 1;
+  }
+}
 
 class DungeonRoom extends Room {
   constructor() {
     super();
-    this.maxClients = 4; // Max 4 players per dungeon
+    this.maxClients = 4;
     this.autoDispose = true;
   }
 
+  // Initialize the room with dungeon data
   async onCreate(options) {
     console.log('DungeonRoom created!', options);
-    this.setState(new DungeonState());
     
-    // Set metadata from options
-    this.setMetadata({
-      dungeonId: options.dungeonId,
-      dungeonName: options.dungeonName,
-      dungeonType: options.dungeonType || 'normal',
-      level: options.level || 1,
-      private: options.private || false
-    });
+    this.setState(new DungeonRoomState());
     
-    if (options.dungeonId) {
-      // Load existing dungeon
-      try {
-        const result = await db.query(
-          `SELECT dp.seed, dp.completed_waves, c.level, dp.status
-           FROM ${db.TABLES.DUNGEON_PROGRESS} dp
-           JOIN ${db.TABLES.CHARACTERS} c ON dp.character_id = c.id
-           WHERE dp.id = $1`,
-          [options.dungeonId]
-        );
-        
-        if (result.rowCount > 0) {
-          const dungeonData = result.rows[0];
-          
-          // Get balance parameters
-          const balanceResult = await db.query(
-            `SELECT parameter_key, value FROM ${db.TABLES.BALANCE_PARAMETERS}
-             WHERE parameter_key IN ('drop_rate_multiplier', 'rarity_threshold_adjustment', 'global_difficulty_modifier')`
-          );
-          
-          const balanceParams = {};
-          balanceResult.rows.forEach(row => {
-            balanceParams[row.parameter_key] = parseFloat(row.value);
-          });
-          
-                    // Regenerate dungeon          this.state.dungeon = generateDungeon(            dungeonData.seed,            dungeonData.level,            options.dungeonType || 'normal',            balanceParams          );                    // Generate environmental effects          this.state.environment = generateEnvironmentalEffects(            dungeonData.seed + 12345, // Use different seed            options.dungeonType || 'normal',            dungeonData.level          );                    // Set current wave to completed waves          this.state.currentWave = parseInt(dungeonData.completed_waves);
-          
-          // Load current wave mobs
-          if (this.state.currentWave < this.state.dungeon.waves.length) {
-            this.state.mobs = [...this.state.dungeon.waves[this.state.currentWave].mobs];
-          }
-        }
-      } catch (error) {
-        console.error('Error loading dungeon:', error);
-      }
+    // If roomId is provided in options, use that as the dungeon ID
+    this.roomId = options.roomId || this.roomId;
+    
+    // Get dungeon data from database or generate if not found
+    try {
+      // In a full implementation, we would load the dungeon data from the database
+      // For this prototype, we'll just use the seed from options or generate one
+      const dungeonSeed = options.seed || `dungeon_${Date.now()}`;
+      const dungeonType = options.dungeonType || 'normal';
+      const difficulty = options.difficulty || 1;
+      
+      this.state.seed = dungeonSeed;
+      this.state.dungeonType = dungeonType;
+      this.state.difficulty = difficulty;
+      this.state.totalWaves = this.calculateTotalWaves(dungeonType, difficulty);
+      
+      // Setup RNG for the dungeon
+      this.dungeonRNG = createSeededRNG(generateDungeonSeed({
+        baseSeed: dungeonSeed,
+        dungeonType,
+        difficulty
+      }));
+      
+      console.log(`Dungeon initialized with seed: ${dungeonSeed}, type: ${dungeonType}, difficulty: ${difficulty}`);
+    } catch (error) {
+      console.error('Error initializing dungeon:', error);
     }
     
     // Register message handlers
-    this.onMessage('action', this.handleAction.bind(this));
-    this.onMessage('ready', this.handleReady.bind(this));
-    this.onMessage('startWave', this.startWave.bind(this));
-    this.onMessage('collectLoot', this.collectLoot.bind(this));
-  }
-  
-  async onJoin(client, options) {
-    console.log('Client joined:', client.sessionId);
-    
-    // Add player to state
-    this.state.players.set(client.sessionId, {
-      id: client.sessionId,
-      characterId: options.characterId,
-      name: options.name || 'Player',
-      ready: false,
-      stats: options.stats || {
-        hp: 100,
-        maxHp: 100,
-        mp: 50,
-        maxMp: 50,
-        atk: 10,
-        def: 5,
-        str: 1,
-        int: 1,
-        agi: 1,
-        dex: 1,
-        luk: 1
-      },
-      skills: options.skills || [],
-      cooldowns: {},
-      effects: [],
-      equipment: options.equipment || []
+    this.onMessage('ready', (client, message) => {
+      const player = this.state.players.get(client.sessionId);
+      if (player) {
+        player.ready = message.ready || false;
+        this.checkAllPlayersReady();
+      }
     });
     
-    // If this is the first player, make them leader
-    if (this.state.players.size === 1) {
-      this.state.players.get(client.sessionId).isLeader = true;
-    }
-    
-    // Broadcast player joined message
-    this.broadcast('playerJoined', {
-      playerId: client.sessionId,
-      playerName: options.name || 'Player'
+    this.onMessage('action', (client, message) => {
+      this.handlePlayerAction(client, message);
     });
-  }
-  
-  onLeave(client, consented) {
-    console.log('Client left:', client.sessionId);
     
-    // Remove player from state
-    this.state.players.delete(client.sessionId);
-    
-    // Reassign leader if needed
-    if (this.state.players.size > 0 && this.state.players.get(client.sessionId)?.isLeader) {
-      const newLeader = this.state.players.entries().next().value[0];
-      this.state.players.get(newLeader).isLeader = true;
-    }
-    
-    // Broadcast player left message
-    this.broadcast('playerLeft', {
-      playerId: client.sessionId
-    });
-  }
-  
-  onDispose() {
-    console.log('DungeonRoom disposed');
-  }
-  
-  handleReady(client, message) {
-    const player = this.state.players.get(client.sessionId);
-    if (player) {
-      player.ready = message.ready;
-      
-      // Check if all players are ready
-      let allReady = true;
-      this.state.players.forEach(p => {
-        if (!p.ready) allReady = false;
-      });
-      
-      // Auto-start if all players ready
-      if (allReady && !this.state.waveInProgress) {
+    this.onMessage('startWave', (client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (player && player.isLeader) {
         this.startWave();
       }
+    });
+    
+    this.onMessage('collectLoot', (client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (player) {
+        this.collectLoot(client);
+      }
+    });
+  }
+
+  // When a client connects to the room
+  async onJoin(client, options) {
+    console.log('Client joined!', client.sessionId);
+    
+    try {
+      const { characterId, name, stats, skills, equipment } = options;
+      
+      // Add player to the room state
+      this.state.players.set(client.sessionId, {
+        id: client.sessionId,
+        characterId,
+        name: name || 'Player',
+        stats: stats || { hp: 100, maxHp: 100, mp: 50, maxMp: 50 },
+        skills: skills || [],
+        equipment: equipment || [],
+        ready: false,
+        isLeader: this.state.players.size === 0, // First player is the leader
+        effects: []
+      });
+      
+      console.log(`Player ${name} (${characterId}) joined the dungeon room`);
+    } catch (error) {
+      console.error('Error adding player to room:', error);
     }
   }
-  
-    startWave() {    if (this.state.waveInProgress) return;        // Get current wave    if (this.state.currentWave >= this.state.dungeon.waves.length) {      this.broadcast('dungeonComplete', { dungeon: this.state.dungeon });      return;    }        const wave = this.state.dungeon.waves[this.state.currentWave];    this.state.mobs = [...wave.mobs];    this.state.waveInProgress = true;        // Reset cooldowns for players    this.state.players.forEach(player => {      player.cooldowns = {};      player.effects = player.effects.filter(e => e.permanent);    });        // Reset environmental state    this.state.environmentalHazards = [];    this.state.lastEnvironmentTick = Date.now();        // Send environment description to clients    if (this.state.environment) {      this.broadcast('environmentDescription', {        type: this.state.environment.type,        description: this.state.environment.description,        effects: this.state.environment.effects.map(e => e.description)      });    }        // Broadcast wave start    this.broadcast('waveStart', {      waveNumber: this.state.currentWave + 1,      mobs: this.state.mobs,      isBossWave: wave.isBossWave    });        // Set timeout for first mob action (3 seconds)    this.mobActionTimeout = this.clock.setTimeout(() => {      this.performMobActions();    }, 3000);        // Start environmental effect processing    this.environmentalEffectInterval = this.clock.setInterval(() => {      this.environmentalEffectTick();    }, 1000);
-  }
-  
-  async handleAction(client, action) {
+
+  // When a client leaves the room
+  async onLeave(client, consented) {
+    console.log('Client left!', client.sessionId);
+    
+    // Check if this client was the leader
     const player = this.state.players.get(client.sessionId);
-    if (!player || !this.state.waveInProgress) return;
+    const wasLeader = player && player.isLeader;
     
-    // Check cooldowns
-    if (player.cooldowns[action.skillId]) {
-      client.send('error', { message: 'Skill is on cooldown' });
+    // Remove player from the room state
+    this.state.players.delete(client.sessionId);
+    
+    // If the leader left and there are other players, assign a new leader
+    if (wasLeader && this.state.players.size > 0) {
+      const newLeaderId = this.state.players.keys().next().value;
+      const newLeader = this.state.players.get(newLeaderId);
+      if (newLeader) {
+        newLeader.isLeader = true;
+      }
+    }
+    
+    // If everyone left, end the dungeon
+    if (this.state.players.size === 0) {
+      this.disconnect();
+    }
+  }
+
+  // When the room is disposed
+  onDispose() {
+    console.log('Room disposed!', this.roomId);
+  }
+
+  // Check if all players are ready
+  checkAllPlayersReady() {
+    if (this.state.players.size === 0) return false;
+    
+    let allReady = true;
+    this.state.players.forEach(player => {
+      if (!player.ready) {
+        allReady = false;
+      }
+    });
+    
+    return allReady;
+  }
+
+  // Start a new wave of enemies
+  startWave() {
+    if (this.state.waveInProgress) {
+      console.log('Wave already in progress!');
       return;
     }
     
-    // Find skill
-    const skill = player.skills.find(s => s.id === action.skillId);
+    if (this.state.currentWave >= this.state.totalWaves) {
+      console.log('All waves completed!');
+      this.broadcast('dungeonComplete', { loot: this.generateLoot('boss') });
+      return;
+    }
+    
+    // Generate mobs for the wave
+    this.state.currentWave++;
+    this.state.waveInProgress = true;
+    
+    const waveConfig = this.getWaveConfig(this.state.currentWave);
+    const mobs = this.generateMobs(waveConfig);
+    this.state.mobs = mobs;
+    
+    console.log(`Wave ${this.state.currentWave} started with ${mobs.length} mobs`);
+    
+    // Notify clients
+    this.broadcast('waveStart', { 
+      waveNumber: this.state.currentWave,
+      mobs: this.state.mobs 
+    });
+    
+    // Start mob AI
+    this.startMobAI();
+  }
+
+  // Handle player actions
+  handlePlayerAction(client, message) {
+    if (!this.state.waveInProgress) return;
+    
+    const { skillId, targetId, targetType } = message;
+    const player = this.state.players.get(client.sessionId);
+    
+    if (!player) return;
+    
+    // Find the skill
+    const skill = player.skills.find(s => s.id === skillId);
     if (!skill) {
-      client.send('error', { message: 'Skill not found' });
+      console.log(`Skill ${skillId} not found!`);
       return;
     }
     
-    // Check target validity
+    // Find the target
     let target;
-    if (action.targetType === 'MOB') {
-      target = this.state.mobs.find(m => m.id === action.targetId);
-    } else if (action.targetType === 'PLAYER') {
-      target = this.state.players.get(action.targetId);
-    } else if (action.targetType === 'SELF') {
-      target = player;
+    if (targetType === 'MOB') {
+      target = this.state.mobs.find(m => m.id === targetId);
+    } else if (targetType === 'PLAYER') {
+      target = this.state.players.get(targetId);
     }
     
     if (!target) {
-      client.send('error', { message: 'Invalid target' });
+      console.log(`Target ${targetId} not found!`);
       return;
     }
     
-    // Process action
-    const result = this.processAction(player, skill, target, action.targetType);
+    // Process the action
+    const result = this.processAction(player, skill, target, targetType);
     
-    // Apply cooldown
-    player.cooldowns[action.skillId] = skill.cooldown;
-    
-    // Broadcast action result
+    // Broadcast the result
     this.broadcast('actionResult', result);
     
-    // Add to combat log
-    this.state.combatLog.push(result);
+    // Check if all mobs are defeated
+    if (targetType === 'MOB' && this.state.mobs.length === 0) {
+      this.waveComplete();
+    }
     
-    // Check if all mobs defeated
-    if (this.state.mobs.length === 0) {
-      await this.endWave();
+    // Check if all players are defeated
+    let allDefeated = true;
+    this.state.players.forEach(p => {
+      if (p.stats.hp > 0) {
+        allDefeated = false;
+      }
+    });
+    
+    if (allDefeated) {
+      this.waveFailed();
     }
   }
-  
+
+  // Process an action
   processAction(player, skill, target, targetType) {
     const result = {
       actorId: player.id,
@@ -210,862 +274,427 @@ class DungeonRoom extends Room {
       effects: []
     };
     
-    // Different logic depending on skill type
-    switch (skill.type) {
-      case 'ATTACK':
-        // Use advanced combat calculator for damage
-        const damageResult = calculateDamage(player, target, skill);
-        
-        // Apply damage
-        target.stats.hp = Math.max(0, target.stats.hp - damageResult.damage);
-        
-        // Add damage effect
-        result.effects.push({
-          type: 'DAMAGE',
-          value: damageResult.damage,
-          isCrit: damageResult.isCrit,
-          isHit: damageResult.isHit,
-          element: skill.element
-        });
-        
-        // Add any additional effects from the damage calculation
-        if (damageResult.effects && damageResult.effects.length > 0) {
-          // Apply status effects to target
-          if (!target.effects) target.effects = [];
-          target.effects.push(...damageResult.effects);
-          
-          // Add effects to result
-          damageResult.effects.forEach(effect => {
-            result.effects.push({
-              type: effect.type,
-              duration: effect.duration
-            });
-          });
-        }
-        
-        // Check if target defeated
-        if (target.stats.hp <= 0) {
-          if (targetType === 'MOB') {
-            // Remove mob from state
-            this.state.mobs = this.state.mobs.filter(m => m.id !== target.id);
-            
-            // Add defeat effect
-            result.effects.push({
-              type: 'DEFEAT',
-              targetId: target.id
-            });
-            
-            // Generate loot
-            const loot = this.generateLoot(target);
-            if (loot) {
-              this.state.loot.push(loot);
-            }
-          }
-        }
-        break;
-        
-      case 'HEAL':
-        // Use advanced healing calculator
-        const healResult = calculateHealing(player, target, skill);
-        
-        // Apply healing
-        const oldHp = target.stats.hp;
-        target.stats.hp = Math.min(target.stats.maxHp, target.stats.hp + healResult.healing);
-        
-        // Add healing effect
-        result.effects.push({
-          type: 'HEAL',
-          value: target.stats.hp - oldHp,
-          isCrit: healResult.isCrit
-        });
-        
-        // Add additional healing effects
-        if (healResult.effects && healResult.effects.length > 0) {
-          // Apply effects to target
-          if (!target.effects) target.effects = [];
-          target.effects.push(...healResult.effects);
-          
-          // Add to result
-          healResult.effects.forEach(effect => {
-            result.effects.push({
-              type: effect.type,
-              duration: effect.duration
-            });
-          });
-        }
-        break;
-        
-      case 'BUFF':
-        // Apply buff effect
-        const buff = {
-          type: 'BUFF',
-          stat: skill.targetStat,
-          multiplier: skill.statMultiplier || 1.2,
-          duration: skill.duration || 3
-        };
-        
-        if (!target.effects) target.effects = [];
-        target.effects.push(buff);
-        
-        // Add buff effect to result
-        result.effects.push(buff);
-        break;
-        
-      case 'DEBUFF':
-        // Only apply debuffs to mobs for simplicity
-        if (targetType === 'MOB') {
-          const debuff = {
-            type: 'DEBUFF',
-            stat: skill.targetStat,
-            multiplier: skill.statMultiplier || 0.8,
-            duration: skill.duration || 3
-          };
-          
-          if (!target.effects) target.effects = [];
-          target.effects.push(debuff);
-          
-          // Add debuff effect to result
-          result.effects.push(debuff);
-        }
-        break;
+    // Simple damage calculation for prototype
+    let damage = 10 + (player.stats.str || 1) * 2;
+    const isCrit = Math.random() < 0.1; // 10% crit chance
+    
+    if (isCrit) {
+      damage *= 1.5;
     }
     
-    return result;
-  }
-  
-  performMobActions() {
-    if (!this.state.waveInProgress || this.state.mobs.length === 0) return;
+    // Apply damage
+    target.stats.hp = Math.max(0, target.stats.hp - damage);
     
-    // Each mob performs an action
-    for (const mob of this.state.mobs) {
-      // Skip if mob has no skills
-      if (!mob.skills || mob.skills.length === 0) continue;
-      
-      // Find available skills (not on cooldown)
-      const availableSkills = mob.skills.filter(s => !mob.cooldowns?.[s.id]);
-      
-      if (availableSkills.length === 0) continue;
-      
-      // Choose a random skill
-      const skill = availableSkills[Math.floor(Math.random() * availableSkills.length)];
-      
-      // Choose a target based on skill type
-      let target, targetType;
-      
-      switch (skill.type) {
-        case 'ATTACK':
-        case 'DEBUFF':
-          // Target random player
-          const playerKeys = Array.from(this.state.players.keys());
-          const randomPlayerKey = playerKeys[Math.floor(Math.random() * playerKeys.length)];
-          target = this.state.players.get(randomPlayerKey);
-          targetType = 'PLAYER';
-          break;
-          
-        case 'HEAL':
-        case 'BUFF':
-          // Target self or another mob with lowest HP
-          if (mob.stats.hp < mob.stats.maxHp * 0.5 && skill.type === 'HEAL') {
-            target = mob;
-            targetType = 'MOB';
-          } else {
-            const needyMob = this.state.mobs
-              .filter(m => m.id !== mob.id)
-              .sort((a, b) => (a.stats.hp / a.stats.maxHp) - (b.stats.hp / b.stats.maxHp))[0];
-              
-            if (needyMob) {
-              target = needyMob;
-              targetType = 'MOB';
-            } else {
-              target = mob;
-              targetType = 'MOB';
-            }
-          }
-          break;
-      }
-      
-      if (!target) continue;
-      
-      // Process action
-      const result = this.processMobAction(mob, skill, target, targetType);
-      
-      // Apply cooldown
-      if (!mob.cooldowns) mob.cooldowns = {};
-      mob.cooldowns[skill.id] = skill.cooldown;
-      
-      // Broadcast action result
-      this.broadcast('mobActionResult', result);
-      
-      // Add to combat log
-      this.state.combatLog.push(result);
-      
-      // Check if all players defeated
-      let allPlayersDefeated = true;
-      this.state.players.forEach(p => {
-        if (p.stats.hp > 0) allPlayersDefeated = false;
-      });
-      
-      if (allPlayersDefeated) {
-        this.endWave(true);
-        return;
-      }
-    }
-    
-    // Schedule next mob action (every 3 seconds)
-    this.mobActionTimeout = this.clock.setTimeout(() => {
-      this.performMobActions();
-    }, 3000);
-  }
-  
-  processMobAction(mob, skill, target, targetType) {
-    // Similar to player action processing, but for mobs
-    const result = {
-      actorId: mob.id,
-      skillId: skill.id,
-      skillName: skill.name,
-      targetId: target.id,
-      targetType,
-      effects: []
-    };
-    
-    // Process based on skill type
-    switch (skill.type) {
-      case 'ATTACK':
-        // Simplified damage calculation for mobs
-        const damage = Math.floor(skill.damage || mob.stats.atk);
-        
-        // Apply damage
-        target.stats.hp = Math.max(0, target.stats.hp - damage);
-        
-        // Add damage effect
-        result.effects.push({
-          type: 'DAMAGE',
-          value: damage,
-          isCrit: false
-        });
-        
-        // Check if target defeated
-        if (target.stats.hp <= 0 && targetType === 'PLAYER') {
-          result.effects.push({
-            type: 'DEFEAT',
-            targetId: target.id
-          });
-        }
-        break;
-        
-      case 'HEAL':
-        // Calculate healing
-        const healing = Math.floor(skill.healAmount || mob.stats.int);
-        
-        // Apply healing
-        const oldHp = target.stats.hp;
-        target.stats.hp = Math.min(target.stats.maxHp, target.stats.hp + healing);
-        
-        // Add healing effect
-        result.effects.push({
-          type: 'HEAL',
-          value: target.stats.hp - oldHp
-        });
-        break;
-        
-      case 'BUFF':
-      case 'DEBUFF':
-        // Apply effect
-        const effect = {
-          type: skill.type,
-          stat: skill.statBoost?.stat || skill.statReduction?.stat || 'atk',
-          multiplier: skill.statBoost?.amount || skill.statReduction?.amount || 1.2,
-          duration: skill.duration || 3
-        };
-        
-        if (!target.effects) target.effects = [];
-        target.effects.push(effect);
-        
-        // Add effect to result
-        result.effects.push(effect);
-        break;
-    }
-    
-    return result;
-  }
-  
-  generateLoot(mob) {
-    if (!mob) return null;
-    
-    // Generate items based on mob properties
-    const items = generateMobLoot(mob, this.state.dungeon);
-    
-    // Calculate experience and gold
-    const playerLevel = Array.from(this.state.players.values())[0]?.stats?.level || 1;
-    const experience = calculateMobExperience(mob, playerLevel);
-    const gold = calculateMobGold(mob);
-    
-    return {
-      id: `loot-${Date.now()}-${mob.id}`,
-      items,
-      experience,
-      gold,
-      sourceId: mob.id,
-      sourceName: mob.name,
-      isBossLoot: mob.isBoss
-    };
-  }
-  
-    async endWave(failed = false) {    this.state.waveInProgress = false;        // Clear mob action timeout    if (this.mobActionTimeout) {      this.clock.clearTimeout(this.mobActionTimeout);    }        // Clear environmental effect interval    if (this.environmentalEffectInterval) {      this.clock.clearInterval(this.environmentalEffectInterval);    }
-    
-    if (failed) {
-      // Dungeon run failed
-      this.broadcast('waveFailed', {
-        waveNumber: this.state.currentWave + 1
-      });
-      
-      // Update database
-      try {
-        await db.query(
-          `UPDATE ${db.TABLES.DUNGEON_PROGRESS} 
-           SET status = 'FAILED', last_updated = NOW()
-           WHERE id = $1`,
-          [this.metadata.dungeonId]
-        );
-      } catch (error) {
-        console.error('Error updating dungeon progress:', error);
-      }
-      
-      return;
-    }
-    
-    // Reset player ready status
-    this.state.players.forEach(player => {
-      player.ready = false;
+    // Add effect
+    result.effects.push({
+      type: 'DAMAGE',
+      value: damage,
+      isCrit
     });
     
-    // Increment wave counter
-    this.state.currentWave++;
-    
-    // Update database with completed wave
-    try {
-      await db.query(
-        `UPDATE ${db.TABLES.DUNGEON_PROGRESS} 
-         SET completed_waves = $1, last_updated = NOW()
-         WHERE id = $2`,
-        [this.state.currentWave, this.metadata.dungeonId]
-      );
-    } catch (error) {
-      console.error('Error updating dungeon progress:', error);
-    }
-    
-    // Check if dungeon complete
-    if (this.state.currentWave >= this.state.dungeon.waves.length) {
-      // Dungeon complete
-      this.broadcast('dungeonComplete', {
-        dungeon: this.state.dungeon,
-        loot: this.state.loot
-      });
-      
-      // Update database
-      try {
-        await db.query(
-          `UPDATE ${db.TABLES.DUNGEON_PROGRESS} 
-           SET status = 'COMPLETED', last_updated = NOW()
-           WHERE id = $1`,
-          [this.metadata.dungeonId]
-        );
-      } catch (error) {
-        console.error('Error updating dungeon progress:', error);
-      }
-    } else {
-      // Wave complete
-      this.broadcast('waveComplete', {
-        waveNumber: this.state.currentWave,
-        nextWave: this.state.dungeon.waves[this.state.currentWave],
-        loot: this.state.loot
-      });
-    }
-  }
-  
-  async collectLoot(client, message) {
-    const player = this.state.players.get(client.sessionId);
-    if (!player || this.state.waveInProgress || this.state.loot.length === 0) return;
-    
-    try {
-      // Get character info
-      const characterResult = await db.query(
-        `SELECT c.id, c.level, c.experience, c.next_level_exp, c.gold
-         FROM ${db.TABLES.CHARACTERS} c
-         WHERE c.id = $1`,
-        [player.characterId]
-      );
-      
-      if (characterResult.rowCount === 0) {
-        client.send('error', { message: 'Character not found' });
-        return;
-      }
-      
-      const character = characterResult.rows[0];
-      
-      // Get inventory
-      const inventoryResult = await db.query(
-        `SELECT id, items FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
-        [player.characterId]
-      );
-      
-      if (inventoryResult.rowCount === 0) {
-        client.send('error', { message: 'Inventory not found' });
-        return;
-      }
-      
-      const inventoryId = inventoryResult.rows[0].id;
-      const currentItems = inventoryResult.rows[0].items || [];
-      
-      // Collect all items from all loot
-      const allNewItems = this.state.loot.flatMap(loot => loot.items || []);
-      
-      // Add all new items to inventory
-      const updatedItems = [...currentItems, ...allNewItems];
-      
-      // Calculate total experience and gold
-      const totalExperience = this.state.loot.reduce((sum, loot) => sum + (loot.experience || 0), 0);
-      const totalGold = this.state.loot.reduce((sum, loot) => sum + (loot.gold || 0), 0);
-      
-      // Add experience to character
-      let newLevel = character.level;
-      let newExp = character.experience + totalExperience;
-      let newNextLevelExp = character.next_level_exp;
-      
-      // Check for level up
-      while (newExp >= newNextLevelExp) {
-        newLevel++;
-        newExp -= newNextLevelExp;
-        // Next level exp formula: current * 1.1 + 100
-        newNextLevelExp = Math.floor(newNextLevelExp * 1.1 + 100);
-      }
-      
-      // Update character in database
-      await db.query(
-        `UPDATE ${db.TABLES.CHARACTERS}
-         SET level = $1, experience = $2, next_level_exp = $3, gold = gold + $4, stat_points = stat_points + $5
-         WHERE id = $6`,
-        [
-          newLevel, 
-          newExp, 
-          newNextLevelExp, 
-          totalGold,
-          newLevel - character.level, // Add stat points for level ups
-          player.characterId
-        ]
-      );
-      
-      // Update inventory
-      await db.query(
-        `UPDATE ${db.TABLES.INVENTORY}
-         SET items = $1, last_updated = NOW()
-         WHERE id = $2`,
-        [JSON.stringify(updatedItems), inventoryId]
-      );
-      
-      // Update dungeon progress to mark current wave as completed
-      await db.query(
-        `UPDATE ${db.TABLES.DUNGEON_PROGRESS}
-         SET completed_waves = $1, last_updated = NOW()
-         WHERE id = $2`,
-        [this.state.currentWave + 1, this.metadata.dungeonId]
-      );
-      
-      // Prepare loot summary for the client
-      const lootSummary = {
-        items: allNewItems,
-        experience: totalExperience,
-        gold: totalGold,
-        levelUp: newLevel > character.level,
-        newLevel: newLevel
-      };
-      
-      // Send loot summary to the client
-      client.send('lootCollected', lootSummary);
-      
-      // Clear loot in the room
-      this.state.loot = [];
-      
-      // Broadcast loot collected message
-      this.broadcast('lootCollectedBy', {
-        playerId: client.sessionId,
-        playerName: player.name
-      });
-      
-      // Move to next wave if all players are ready
-      let allReady = true;
-      this.state.players.forEach(p => {
-        if (!p.ready) allReady = false;
-      });
-      
-      if (allReady) {
-        // Increment wave counter
-        this.state.currentWave++;
+    // Check if target defeated
+    if (target.stats.hp <= 0) {
+      if (targetType === 'MOB') {
+        // Remove mob from state
+        this.state.mobs = this.state.mobs.filter(m => m.id !== target.id);
         
-        // Start next wave
-        this.startWave();
+        // Add defeat effect
+        result.effects.push({
+          type: 'DEFEAT',
+          targetId: target.id
+        });
       }
-    } catch (error) {
-      console.error('Collect loot error:', error);
-      client.send('error', { message: 'Failed to collect loot' });
     }
+    
+    return result;
   }
 
-  /**
-   * Process environmental effects
-   * Applied at regular intervals during waves
-   */
-  environmentalEffectTick() {
-    if (!this.state.environment || !this.state.waveInProgress) return;
+  // Start mob AI (simple implementation for prototype)
+  startMobAI() {
+    if (this.mobInterval) {
+      clearInterval(this.mobInterval);
+    }
     
-    const now = Date.now();
-    const elapsed = now - this.state.lastEnvironmentTick;
-    
-    // Check if enough time has passed (1 second)
-    if (elapsed < 1000) return;
-    
-    this.state.lastEnvironmentTick = now;
-    
-    // Get environment effects
-    const environment = this.state.environment;
-    
-    // Process active environment effects
-    environment.effects.forEach(effect => {
-      // Skip effects without an interval or chance-based effects
-      if (!effect.interval || (effect.chance && Math.random() > effect.chance)) return;
-      
-      // Check if it's time to apply the effect
-      const timeSinceLastEffect = now - (effect.lastApplied || 0);
-      if (timeSinceLastEffect < effect.interval * 1000) return;
-      
-      // Update last applied time
-      effect.lastApplied = now;
-      
-      // Apply effect based on type
-      switch (effect.type) {
-        case 'damage_over_time':
-          // Apply damage to all entities in the dungeon
-          this.applyEnvironmentalDamage(effect);
-          break;
-          
-        case 'healing':
-          // Apply healing to all players
-          this.applyEnvironmentalHealing(effect);
-          break;
-          
-        case 'hazard':
-          // Create a hazard in the environment
-          this.createEnvironmentalHazard(effect);
-          break;
-      }
-    });
-    
-    // Process active environmental hazards
-    this.processActiveHazards();
-  }
-  
-  /**
-   * Apply environmental damage to entities
-   */
-  applyEnvironmentalDamage(effect) {
-    // Get all players and mobs
-    const players = Array.from(this.state.players.values());
-    
-    // Apply damage to players
-    players.forEach(player => {
-      // Skip defeated players
-      if (player.stats.hp <= 0) return;
-      
-      // Calculate damage (reduced for players)
-      const damage = Math.floor(effect.value * 0.5);
-      
-      // Apply damage
-      player.stats.hp = Math.max(0, player.stats.hp - damage);
-      
-      // Notify player of environmental damage
-      const clientId = player.id;
-      const client = this.clients.find(c => c.sessionId === clientId);
-      
-      if (client) {
-        client.send('environmentalDamage', {
-          type: effect.element,
-          damage,
-          description: `You took ${damage} ${effect.element} damage from the environment`
-        });
+    this.mobInterval = setInterval(() => {
+      if (!this.state.waveInProgress || this.state.mobs.length === 0) {
+        clearInterval(this.mobInterval);
+        return;
       }
       
-      // Check if player is defeated
-      if (player.stats.hp <= 0) {
-        this.handlePlayerDefeat(player);
-      }
-    });
-    
-    // Apply damage to mobs (if applicable)
-    if (effect.affectsMobs) {
+      // Each mob takes an action
       this.state.mobs.forEach(mob => {
-        // Skip defeated mobs
         if (mob.stats.hp <= 0) return;
         
-        // Calculate damage
-        const damage = Math.floor(effect.value * 0.7);
+        // Find a random target player
+        const alivePlayers = [];
+        this.state.players.forEach(player => {
+          if (player.stats.hp > 0) {
+            alivePlayers.push(player);
+          }
+        });
         
-        // Apply damage
-        mob.stats.hp = Math.max(0, mob.stats.hp - damage);
+        if (alivePlayers.length === 0) return;
         
-        // Add to combat log
-        this.state.combatLog.push({
-          targetId: mob.id,
-          targetType: 'MOB',
+        const targetIndex = Math.floor(Math.random() * alivePlayers.length);
+        const target = alivePlayers[targetIndex];
+        
+        // Simple attack action
+        const damage = 5 + (mob.level || 1);
+        target.stats.hp = Math.max(0, target.stats.hp - damage);
+        
+        // Broadcast mob action
+        this.broadcast('mobActionResult', {
+          actorId: mob.id,
+          skillName: 'Attack',
+          targetId: target.id,
+          targetType: 'PLAYER',
           effects: [
             {
               type: 'DAMAGE',
               value: damage,
-              element: effect.element,
-              source: 'environment'
+              isCrit: false
             }
           ]
         });
         
-        // Check if mob is defeated
-        if (mob.stats.hp <= 0) {
-          // Remove mob from state
-          this.state.mobs = this.state.mobs.filter(m => m.id !== mob.id);
-          
-          // Add defeat message to combat log
-          this.state.combatLog.push({
-            targetId: mob.id,
-            targetType: 'MOB',
+        // Check if player defeated
+        if (target.stats.hp <= 0) {
+          this.broadcast('mobActionResult', {
+            actorId: mob.id,
+            skillName: 'Attack',
+            targetId: target.id,
+            targetType: 'PLAYER',
             effects: [
               {
                 type: 'DEFEAT',
-                targetId: mob.id
+                targetId: target.id
               }
             ]
           });
           
-          // No loot for environmental kills
+          // Check if all players defeated
+          let allDefeated = true;
+          this.state.players.forEach(p => {
+            if (p.stats.hp > 0) {
+              allDefeated = false;
+            }
+          });
+          
+          if (allDefeated) {
+            this.waveFailed();
+          }
         }
       });
+    }, 3000); // Every 3 seconds
+  }
+
+  // Wave completed successfully
+  waveComplete() {
+    this.state.waveInProgress = false;
+    clearInterval(this.mobInterval);
+    
+    // Generate loot for this wave
+    const loot = this.generateLoot();
+    this.state.loot = loot;
+    
+    console.log(`Wave ${this.state.currentWave} completed!`);
+    
+    // Notify clients
+    this.broadcast('waveComplete', { loot });
+    
+    // If this was the final wave
+    if (this.state.currentWave >= this.state.totalWaves) {
+      console.log('All waves completed!');
+      this.broadcast('dungeonComplete', { loot: this.generateLoot('boss') });
+    }
+  }
+
+  // Wave failed
+  waveFailed() {
+    this.state.waveInProgress = false;
+    clearInterval(this.mobInterval);
+    
+    console.log(`Wave ${this.state.currentWave} failed!`);
+    
+    // Notify clients
+    this.broadcast('waveFailed');
+    
+    // Reset players
+    this.state.players.forEach(player => {
+      player.stats.hp = player.stats.maxHp;
+      player.stats.mp = player.stats.maxMp;
+      player.ready = false;
+    });
+  }
+
+  // Collect loot
+  collectLoot(client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    
+    // In a full implementation, this would update the player's inventory in the database
+    console.log(`Player ${player.name} collected loot:`, this.state.loot);
+    
+    // Clear loot
+    this.state.loot = [];
+    
+    // Notify all clients that loot was collected
+    this.broadcast('lootCollected', { playerId: client.sessionId });
+  }
+
+  // Generate loot for the current wave
+  generateLoot(type = 'normal') {
+    const itemCount = type === 'boss' ? 
+      getRandomInt(this.dungeonRNG, 3, 6) : 
+      getRandomInt(this.dungeonRNG, 1, 3);
+    
+    const items = [];
+    
+    for (let i = 0; i < itemCount; i++) {
+      // Define rarity weights based on dungeon type and current wave
+      const rarityWeights = this.getRarityWeights(type);
+      
+      // Weighted selection of rarity
+      const rarity = getWeightedRandom(
+        this.dungeonRNG,
+        ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'],
+        [rarityWeights.F, rarityWeights.E, rarityWeights.D, rarityWeights.C, rarityWeights.B, rarityWeights.A, rarityWeights.S, rarityWeights.SS, rarityWeights.SSS]
+      );
+      
+      // Define item types
+      const itemTypes = ['weapon', 'armor', 'accessory', 'material', 'consumable'];
+      const itemType = getWeightedRandom(
+        this.dungeonRNG,
+        itemTypes,
+        [0.3, 0.3, 0.2, 0.1, 0.1]
+      );
+      
+      // Simple item generation
+      const item = {
+        id: `item_${Date.now()}_${i}`,
+        name: this.generateItemName(itemType, rarity),
+        type: itemType,
+        rarity,
+        stats: this.generateItemStats(itemType, rarity),
+        description: `A ${rarity}-rank ${itemType} found in the dungeon.`,
+        // For weapons, also generate skills
+        skills: itemType === 'weapon' ? [this.generateSkill(rarity)] : []
+      };
+      
+      items.push(item);
     }
     
-    // Broadcast updated state
-    this.broadcast('stateUpdate', {
-      players: Array.from(this.state.players.values()),
-      mobs: this.state.mobs
-    });
+    return items;
   }
-  
-  /**
-   * Apply environmental healing
-   */
-  applyEnvironmentalHealing(effect) {
-    // Only heal players
-    const players = Array.from(this.state.players.values());
-    
-    // Apply healing to players
-    players.forEach(player => {
-      // Skip defeated players
-      if (player.stats.hp <= 0) return;
-      
-      // Calculate healing
-      const healing = Math.floor(effect.value);
-      
-      // Apply healing
-      const oldHp = player.stats.hp;
-      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healing);
-      
-      // Only notify if healing was applied
-      if (player.stats.hp > oldHp) {
-        // Notify player of environmental healing
-        const clientId = player.id;
-        const client = this.clients.find(c => c.sessionId === clientId);
-        
-        if (client) {
-          client.send('environmentalHealing', {
-            healing: player.stats.hp - oldHp,
-            description: `You were healed for ${player.stats.hp - oldHp} by the environment`
-          });
-        }
-      }
-    });
-    
-    // Broadcast updated state
-    this.broadcast('stateUpdate', {
-      players: Array.from(this.state.players.values())
-    });
-  }
-  
-  /**
-   * Create environmental hazard
-   */
-  createEnvironmentalHazard(effect) {
-    // Create hazard instance
-    const hazard = {
-      id: `hazard-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      type: effect.element,
-      damage: effect.value,
-      radius: effect.radius || 1,
-      duration: effect.duration || 5,
-      createdAt: Date.now()
+
+  // Generate a random item name
+  generateItemName(type, rarity) {
+    const prefixes = {
+      'F': ['Broken', 'Rusty', 'Damaged', 'Worn'],
+      'E': ['Simple', 'Basic', 'Common', 'Standard'],
+      'D': ['Sturdy', 'Quality', 'Reliable', 'Solid'],
+      'C': ['Fine', 'Superior', 'Enhanced', 'Polished'],
+      'B': ['Exceptional', 'Impressive', 'Formidable', 'Magnificent'],
+      'A': ['Heroic', 'Mythic', 'Legendary', 'Ancient'],
+      'S': ['Divine', 'Celestial', 'Transcendent', 'Immortal'],
+      'SS': ['Astral', 'Cosmic', 'Ethereal', 'Ultimate'],
+      'SSS': ['Godly', 'Omnipotent', 'Supreme', 'Absolute']
     };
     
-    // Add to hazards list
-    this.state.environmentalHazards.push(hazard);
+    const typeNames = {
+      'weapon': ['Sword', 'Axe', 'Dagger', 'Staff', 'Bow', 'Wand'],
+      'armor': ['Helmet', 'Chestplate', 'Leggings', 'Boots', 'Gauntlets'],
+      'accessory': ['Ring', 'Necklace', 'Earring', 'Bracelet', 'Talisman'],
+      'material': ['Crystal', 'Ore', 'Essence', 'Fragment', 'Rune'],
+      'consumable': ['Potion', 'Elixir', 'Scroll', 'Food', 'Tonic']
+    };
     
-    // Broadcast hazard creation
-    this.broadcast('environmentalHazard', {
-      hazard,
-      description: `A ${effect.element} hazard has appeared!`
-    });
+    const prefix = prefixes[rarity][Math.floor(Math.random() * prefixes[rarity].length)];
+    const typeName = typeNames[type][Math.floor(Math.random() * typeNames[type].length)];
+    
+    return `${prefix} ${typeName}`;
   }
-  
-  /**
-   * Process active hazards
-   */
-  processActiveHazards() {
-    const now = Date.now();
+
+  // Generate stats for an item based on type and rarity
+  generateItemStats(type, rarity) {
+    const rarityMultiplier = {
+      'F': 0.5,
+      'E': 0.8,
+      'D': 1.0,
+      'C': 1.2,
+      'B': 1.5,
+      'A': 2.0,
+      'S': 2.5,
+      'SS': 3.0,
+      'SSS': 4.0
+    };
     
-    // Process each hazard
-    for (let i = this.state.environmentalHazards.length - 1; i >= 0; i--) {
-      const hazard = this.state.environmentalHazards[i];
-      
-      // Check if hazard has expired
-      if (now - hazard.createdAt >= hazard.duration * 1000) {
-        // Remove hazard
-        this.state.environmentalHazards.splice(i, 1);
-        
-        // Broadcast hazard removal
-        this.broadcast('environmentalHazardRemoved', {
-          hazardId: hazard.id
-        });
-        
-        continue;
-      }
-      
-      // Apply hazard damage to entities in range
-      // For simplicity, we'll just apply to random entities
-      
-      // 50% chance to hit a random player
-      if (Math.random() < 0.5) {
-        const players = Array.from(this.state.players.values());
-        if (players.length > 0) {
-          const randomPlayer = players[Math.floor(Math.random() * players.length)];
-          
-          // Skip defeated players
-          if (randomPlayer.stats.hp > 0) {
-            // Calculate damage
-            const damage = Math.floor(hazard.damage * 0.7);
-            
-            // Apply damage
-            randomPlayer.stats.hp = Math.max(0, randomPlayer.stats.hp - damage);
-            
-            // Notify player
-            const clientId = randomPlayer.id;
-            const client = this.clients.find(c => c.sessionId === clientId);
-            
-            if (client) {
-              client.send('hazardDamage', {
-                hazardId: hazard.id,
-                type: hazard.type,
-                damage
-              });
-            }
-            
-            // Check if player is defeated
-            if (randomPlayer.stats.hp <= 0) {
-              this.handlePlayerDefeat(randomPlayer);
-            }
-          }
-        }
-      }
-      
-      // 50% chance to hit a random mob
-      if (Math.random() < 0.5 && this.state.mobs.length > 0) {
-        const randomMob = this.state.mobs[Math.floor(Math.random() * this.state.mobs.length)];
-        
-        // Skip defeated mobs
-        if (randomMob.stats.hp > 0) {
-          // Calculate damage
-          const damage = Math.floor(hazard.damage);
-          
-          // Apply damage
-          randomMob.stats.hp = Math.max(0, randomMob.stats.hp - damage);
-          
-          // Add to combat log
-          this.state.combatLog.push({
-            targetId: randomMob.id,
-            targetType: 'MOB',
-            effects: [
-              {
-                type: 'DAMAGE',
-                value: damage,
-                element: hazard.type,
-                source: 'hazard'
-              }
-            ]
-          });
-          
-          // Check if mob is defeated
-          if (randomMob.stats.hp <= 0) {
-            // Remove mob from state
-            this.state.mobs = this.state.mobs.filter(m => m.id !== randomMob.id);
-            
-            // Add defeat message to combat log
-            this.state.combatLog.push({
-              targetId: randomMob.id,
-              targetType: 'MOB',
-              effects: [
-                {
-                  type: 'DEFEAT',
-                  targetId: randomMob.id
-                }
-              ]
-            });
-            
-            // No loot for hazard kills
-          }
-        }
-      }
+    const baseStats = {
+      'weapon': { atk: 10, str: 2 },
+      'armor': { def: 8, hp: 15 },
+      'accessory': { agi: 5, luk: 3 }
+    };
+    
+    // Return empty stats for materials and consumables
+    if (type === 'material' || type === 'consumable') {
+      return {};
     }
     
-    // Broadcast updated state if any damage was applied
-    this.broadcast('stateUpdate', {
-      players: Array.from(this.state.players.values()),
-      mobs: this.state.mobs,
-      environmentalHazards: this.state.environmentalHazards
-    });
+    const stats = { ...baseStats[type] };
+    
+    // Apply rarity multiplier
+    for (const stat in stats) {
+      stats[stat] = Math.floor(stats[stat] * rarityMultiplier[rarity]);
+    }
+    
+    return stats;
   }
-  
-  /**
-   * Handle player defeat from environmental effects
-   */
-  handlePlayerDefeat(player) {
-    // Send defeat message to player
-    const clientId = player.id;
-    const client = this.clients.find(c => c.sessionId === clientId);
+
+  // Generate a skill for a weapon
+  generateSkill(rarity) {
+    const rarityMultiplier = {
+      'F': 0.8,
+      'E': 1.0,
+      'D': 1.2,
+      'C': 1.5,
+      'B': 1.8,
+      'A': 2.2,
+      'S': 2.6,
+      'SS': 3.0,
+      'SSS': 4.0
+    };
     
-    if (client) {
-      client.send('playerDefeated', {
-        cause: 'environment'
-      });
+    const baseSkill = {
+      id: `skill_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: 'Basic Attack',
+      type: 'ATTACK',
+      damageMultiplier: 1.0 * rarityMultiplier[rarity],
+      cooldown: 2000, // 2 seconds
+      description: 'A basic attack that deals damage to one target.'
+    };
+    
+    return baseSkill;
+  }
+
+  // Calculate total waves based on dungeon type and difficulty
+  calculateTotalWaves(dungeonType, difficulty) {
+    const baseWaves = {
+      'normal': 5,
+      'elite': 7,
+      'raid': 10
+    };
+    
+    const difficultyModifier = Math.ceil(difficulty / 2);
+    
+    return baseWaves[dungeonType] + difficultyModifier;
+  }
+
+  // Get wave configuration
+  getWaveConfig(waveNumber) {
+    const isBossWave = waveNumber === this.state.totalWaves;
+    
+    if (isBossWave) {
+      return {
+        mobCount: 1,
+        mobLevel: Math.floor(this.state.difficulty * 1.5) + waveNumber,
+        bossWave: true
+      };
     }
     
-    // Broadcast player defeat
-    this.broadcast('playerDefeated', {
-      playerId: player.id,
-      playerName: player.name
-    });
+    return {
+      mobCount: 2 + Math.floor(waveNumber / 2),
+      mobLevel: Math.floor(this.state.difficulty) + waveNumber - 1,
+      bossWave: false
+    };
+  }
+
+  // Generate mobs for a wave
+  generateMobs(waveConfig) {
+    const mobs = [];
     
-    // Check if all players are defeated
-    let allDefeated = true;
-    this.state.players.forEach(p => {
-      if (p.stats.hp > 0) allDefeated = false;
-    });
-    
-    // End wave if all players are defeated
-    if (allDefeated) {
-      this.endWave(true);
+    for (let i = 0; i < waveConfig.mobCount; i++) {
+      const isBoss = waveConfig.bossWave && i === 0;
+      
+      const mobLevel = isBoss ? waveConfig.mobLevel + 2 : waveConfig.mobLevel;
+      const health = isBoss ? 100 + (mobLevel * 20) : 50 + (mobLevel * 10);
+      
+      const mob = {
+        id: `mob_${Date.now()}_${i}`,
+        name: isBoss ? this.generateBossName() : this.generateMobName(),
+        level: mobLevel,
+        stats: {
+          hp: health,
+          maxHp: health,
+          atk: 5 + (mobLevel * 2),
+          def: 3 + mobLevel
+        },
+        isBoss,
+        effects: []
+      };
+      
+      mobs.push(mob);
     }
+    
+    return mobs;
+  }
+
+  // Generate a random mob name
+  generateMobName() {
+    const prefixes = ['Feral', 'Corrupted', 'Savage', 'Vicious', 'Wild', 'Dark', 'Ancient'];
+    const types = ['Wolf', 'Goblin', 'Skeleton', 'Troll', 'Orc', 'Zombie', 'Bandit', 'Spider'];
+    
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const type = types[Math.floor(Math.random() * types.length)];
+    
+    return `${prefix} ${type}`;
+  }
+
+  // Generate a random boss name
+  generateBossName() {
+    const titles = ['Overlord', 'Devourer', 'Destroyer', 'Guardian', 'Warlord', 'Emperor', 'Tyrant'];
+    const names = ['Goroth', 'Azrahel', 'Kraghorn', 'Malgrath', 'Veximus', 'Mordath', 'Zephyr'];
+    
+    const title = titles[Math.floor(Math.random() * titles.length)];
+    const name = names[Math.floor(Math.random() * names.length)];
+    
+    return `${name}, ${title} of the Depths`;
+  }
+
+  // Get rarity weights based on dungeon type and drop type
+  getRarityWeights(dropType) {
+    const baseWeights = {
+      'normal': {
+        'F': 30, 'E': 25, 'D': 20, 'C': 15, 'B': 7, 'A': 2, 'S': 0.8, 'SS': 0.15, 'SSS': 0.05
+      },
+      'boss': {
+        'F': 0, 'E': 5, 'D': 25, 'C': 30, 'B': 25, 'A': 10, 'S': 3, 'SS': 1.5, 'SSS': 0.5
+      }
+    };
+    
+    // Get the appropriate weights
+    let weights = { ...baseWeights[dropType === 'boss' ? 'boss' : 'normal'] };
+    
+    // Apply dungeon type modifier
+    const typeMods = {
+      'normal': 1.0,
+      'elite': 1.2,
+      'raid': 1.5
+    };
+    
+    const mod = typeMods[this.state.dungeonType];
+    
+    // Apply modifiers to each weight
+    weights.F = Math.max(0, weights.F * (2 - mod)); // Reduce common items
+    weights.E = Math.max(0, weights.E * (1.5 - (mod - 1)));
+    weights.D = weights.D;
+    weights.C = weights.C * mod;
+    weights.B = weights.B * mod;
+    weights.A = weights.A * mod;
+    weights.S = weights.S * mod;
+    weights.SS = weights.SS * mod;
+    weights.SSS = weights.SSS * mod;
+    
+    return weights;
   }
 }
 
