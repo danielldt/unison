@@ -401,4 +401,34 @@
       }
     }
   }
+}
+
+.connection-error {
+  background-color: rgba(220, 53, 69, 0.2);
+  border: 1px solid #dc3545;
+  border-radius: 4px;
+  padding: 12px;
+  margin: 10px 0;
+  text-align: center;
+  
+  p {
+    color: #dc3545;
+    margin-bottom: 10px;
+    font-weight: bold;
+  }
+  
+  .reconnect-button {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.2s;
+    
+    &:hover {
+      background-color: #c82333;
+    }
+  }
 } 

@@ -2,10 +2,20 @@ import { create } from 'zustand';
 import axios from 'axios';
 import * as Colyseus from 'colyseus.js';
 
-// Create Colyseus client
-const colyseusClient = new Colyseus.Client('ws://localhost:8080');
+// Create Colyseus client with hostname-aware WebSocket URL
+const getWebSocketUrl = () => {
+  // Get the current hostname and protocol, use same hostname with ws/wss protocol 
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}`;
+};
+
+// Create client with reconnection options
+const colyseusClient = new Colyseus.Client(getWebSocketUrl());
 
 export const useGameStore = create((set, get) => ({
+  // Connection state
+  connectionStatus: 'disconnected', // 'disconnected', 'connecting', 'connected', 'error' 
+
   // Available dungeons
   availableDungeons: [],
   // Current dungeon
@@ -81,92 +91,59 @@ export const useGameStore = create((set, get) => ({
   
   // Join dungeon room
   joinDungeonRoom: async (dungeonId, character) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, connectionStatus: 'connecting' });
     
-    // Validate inputs to prevent null errors
-    if (!dungeonId) {
-      console.error('Cannot join room - missing dungeonId');
+    if (!character) {
       set({ 
-        error: 'Missing dungeon ID', 
-        isLoading: false 
+        error: 'No character selected', 
+        isLoading: false,
+        connectionStatus: 'error' 
       });
       return null;
     }
     
-    if (!character || !character.id) {
-      console.error('Cannot join room - invalid character data', character);
-      set({ 
-        error: 'Invalid character data', 
-        isLoading: false 
-      });
-      return null;
-    }
-    
-    // Ensure character has an inventory and save it to localStorage as a backup
-    if (!character.inventory) {
-      console.log('Character has no inventory, initializing empty array');
-      character.inventory = [];
-    } else {
-      console.log(`Using provided inventory with ${character.inventory.length} items`);
-      // Save inventory to localStorage as a backup in case server calls fail
-      try {
-        localStorage.setItem('characterInventory', JSON.stringify(character.inventory));
-      } catch (e) {
-        console.warn('Could not save inventory to localStorage', e);
-      }
-    }
-    
-    // Save current dungeon ID for reconnection
+    // Save current dungeon ID to localStorage for reconnection
     localStorage.setItem('currentDungeonId', dungeonId);
     
+    // Calculate the player's stats
+    const calculatedStats = {
+      hp: 100,
+      maxHp: 100,
+      mp: 50,
+      maxMp: 50,
+      str: character.strength || 10,
+      dex: character.dexterity || 10,
+      int: character.intelligence || 10,
+      vit: character.vitality || 10
+    };
+    
+    // Get skills from equipped weapons
+    const skills = (character.inventory || [])
+      .filter(item => item.type === 'weapon' && item.equipped)
+      .flatMap(weapon => weapon.skills || []);
+    
+    // Set up retry logic
     const maxRetries = 3;
     let retries = 0;
+    let room = null;
     
+    // Create room options
+    const roomOptions = {
+      roomId: dungeonId,
+      seed: `dungeon_${Date.now()}`,
+      dungeonType: 'normal',
+      difficulty: 1
+    };
+    
+    // Get dungeonProgressId from dungeonId or use dungeonId directly
+    const dungeonProgressId = dungeonId;
+    
+    console.log('Using provided inventory with', character.inventory?.length || 0, 'items');
+    
+    // Try to join room with retry logic
     while (retries < maxRetries) {
       try {
-        // Get dungeon first if not already loaded
-        let dungeon = get().currentDungeon;
-        if (!dungeon || dungeon.progressId !== dungeonId) {
-          console.log(`Loading dungeon with ID: ${dungeonId} for game room`);
-          try {
-            dungeon = await get().getDungeon(dungeonId);
-            if (!dungeon) {
-              throw new Error('Failed to load dungeon data');
-            }
-          } catch (dungeonError) {
-            console.error('Failed to load dungeon:', dungeonError);
-            throw new Error(`Failed to load dungeon: ${dungeonError.message}`);
-          }
-        }
-        
-        // Ensure we're using the database ID (progressId)
-        const dungeonProgressId = dungeon.progressId || dungeonId;
-        
-        // Prepare character stats for the room
-        const { stats } = character;
-        
-        // Calculate derived stats based on GDD formulas
-        const calculatedStats = {
-          ...stats,
-          hp: 100 + (character.level * 20) + (stats.str * 5),
-          maxHp: 100 + (character.level * 20) + (stats.str * 5),
-          mp: 50 + (character.level * 10) + (stats.int * 3),
-          maxMp: 50 + (character.level * 10) + (stats.int * 3),
-          def: 10 + (character.level * 2) + calculateArmorDef(character.inventory || [])
-        };
-        
-        // Get skills from equipped weapons
-        const skills = extractSkillsFromEquipment(character.inventory || []);
-        
-        // Create room options
-        const roomOptions = {
-          roomId: dungeonProgressId,
-          seed: dungeon.seed,
-          dungeonType: dungeon.type,
-          difficulty: 1
-        };
-        
-        let room;
+        console.log(`Starting dungeon with ID: ${dungeonProgressId}`);
         
         // First try to join an existing room
         try {
@@ -205,7 +182,11 @@ export const useGameStore = create((set, get) => ({
         // Setup room event listeners
         setupRoomListeners(room);
         
-        set({ gameRoom: room, isLoading: false });
+        set({ 
+          gameRoom: room, 
+          isLoading: false,
+          connectionStatus: 'connected' 
+        });
         return room;
       } catch (error) {
         console.error(`Attempt ${retries + 1} failed:`, error);
@@ -215,7 +196,8 @@ export const useGameStore = create((set, get) => ({
           console.error(`All ${maxRetries} attempts to join dungeon room failed`);
           set({ 
             error: error.message || 'Failed to join dungeon room after multiple attempts', 
-            isLoading: false 
+            isLoading: false,
+            connectionStatus: 'error'
           });
           return null;
         }
@@ -299,12 +281,37 @@ export const useGameStore = create((set, get) => ({
   // Clear current dungeon
   clearCurrentDungeon: () => {
     set({ currentDungeon: null });
+  },
+
+  // Helper to update connection status
+  setConnectionStatus: (status) => {
+    set({ connectionStatus: status });
+  },
+
+  // Reset connection on error
+  resetConnection: async () => {
+    const { gameRoom } = get();
+    
+    // If we have an existing room, try to leave gracefully
+    if (gameRoom) {
+      try {
+        gameRoom.leave();
+      } catch (err) {
+        console.error('Error leaving game room:', err);
+      }
+    }
+    
+    set({ 
+      gameRoom: null,
+      connectionStatus: 'disconnected',
+      error: 'Connection lost. Please try again.'
+    });
   }
 }));
 
 // Helper function to setup room event listeners
 function setupRoomListeners(room) {
-  const { updateGameState } = useGameStore.getState();
+  const { updateGameState, setConnectionStatus, resetConnection } = useGameStore.getState();
   
   // Listen for state changes
   room.onStateChange((state) => {
@@ -315,6 +322,21 @@ function setupRoomListeners(room) {
       waveInProgress: state.waveInProgress,
       loot: state.loot
     });
+  });
+  
+  // Setup error handling and reconnection
+  room.onError((error) => {
+    console.error('Game room error:', error);
+    setConnectionStatus('error');
+  });
+  
+  room.onLeave((code) => {
+    console.log(`Room left with code: ${code}`);
+    if (code >= 1000) {
+      // Codes >= 1000 are WebSocket close event codes
+      // Handle unexpected disconnection
+      resetConnection();
+    }
   });
   
   // Listen for specific events
@@ -360,10 +382,6 @@ function setupRoomListeners(room) {
     updateGameState({
       combatLog: [...gameState.combatLog, result]
     });
-  });
-  
-  room.onMessage('error', (message) => {
-    console.error('Game room error:', message);
   });
 }
 

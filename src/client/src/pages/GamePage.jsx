@@ -13,12 +13,14 @@ function GamePage() {
   const {
     gameState,
     gameRoom,
+    connectionStatus,
     joinDungeonRoom,
     performAction,
     setReady,
     startWave,
     collectLoot,
     leaveDungeonRoom,
+    resetConnection,
     isLoading,
     error
   } = useGameStore();
@@ -27,6 +29,7 @@ function GamePage() {
   const [selectedSkill, setSelectedSkill] = useState(null);
   const [combatLog, setCombatLog] = useState([]);
   const [combatEffects, setCombatEffects] = useState([]);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   
   const navigate = useNavigate();
   
@@ -75,9 +78,9 @@ function GamePage() {
   }, [currentCharacter, items.length]);
   
   useEffect(() => {
-    // Join dungeon room on component mount
+    // Join dungeon room on component mount or when reconnection is triggered
     const dungeonId = localStorage.getItem('currentDungeonId');
-    if (dungeonId && currentCharacter && !gameRoom) {
+    if (dungeonId && currentCharacter && (!gameRoom || connectionStatus === 'disconnected')) {
       joinDungeonRoom(dungeonId, currentCharacter);
     }
     
@@ -87,7 +90,7 @@ function GamePage() {
         leaveDungeonRoom();
       }
     };
-  }, [currentCharacter, gameRoom, joinDungeonRoom, leaveDungeonRoom]);
+  }, [currentCharacter, gameRoom, connectionStatus, reconnectAttempt, joinDungeonRoom, leaveDungeonRoom]);
   
   // Update combat log when gameState changes
   useEffect(() => {
@@ -137,6 +140,12 @@ function GamePage() {
   const handleLeaveDungeon = () => {
     leaveDungeonRoom();
     navigate('/dungeon');
+  };
+  
+  // New handler for reconnection
+  const handleReconnect = () => {
+    resetConnection();
+    setReconnectAttempt(prev => prev + 1);
   };
   
   // Helper function to calculate health percentage
@@ -250,6 +259,21 @@ function GamePage() {
     );
   }
   
+  // Connection status message component
+  const renderConnectionStatus = () => {
+    if (connectionStatus === 'error' || connectionStatus === 'disconnected') {
+      return (
+        <div className="connection-error">
+          <p>Connection error: {error || 'WebSocket disconnected'}</p>
+          <button className="reconnect-button" onClick={handleReconnect}>
+            Reconnect
+          </button>
+        </div>
+      );
+    }
+    return null;
+  };
+  
   // Get current player from game state
   const currentPlayer = gameState.players.find(p => p.characterId === currentCharacter.id);
   
@@ -268,11 +292,13 @@ function GamePage() {
         </div>
       </div>
       
-      {error && (
+      {error && !['disconnected', 'error'].includes(connectionStatus) && (
         <div className="error-message">
           {error}
         </div>
       )}
+      
+      {renderConnectionStatus()}
       
       {isLoading ? (
         <div className="loading">Loading game...</div>
