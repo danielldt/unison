@@ -72,7 +72,7 @@ async function login(req, res) {
     // Find user
     const result = await db.query(
       `SELECT id, username, email, password_hash FROM ${db.TABLES.USERS} 
-       WHERE username = $1 AND status = 'ACTIVE'`,
+       WHERE username = $1`,
       [username]
     );
     
@@ -147,7 +147,7 @@ async function forgotPassword(req, res) {
   try {
     // Check if user exists
     const userResult = await db.query(
-      `SELECT id FROM ${db.TABLES.USERS} WHERE email = $1 AND status = 'ACTIVE'`,
+      `SELECT id FROM ${db.TABLES.USERS} WHERE email = $1`,
       [email]
     );
     
@@ -188,10 +188,20 @@ async function resetPassword(req, res) {
   }
 }
 
+/**
+ * Verify token
+ * Simple endpoint to verify if a token is valid
+ */
+async function verifyToken(req, res) {
+  // If the request gets here, it means authenticateToken middleware succeeded
+  res.json({ valid: true });
+}
+
 module.exports = {
   register,
   login,
   refreshToken,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  verifyToken
 }; 

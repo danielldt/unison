@@ -7,10 +7,10 @@ const db = require('../../db/database');
 async function getCharacters(req, res) {
   try {
     const result = await db.query(
-      `SELECT id, level, experience, gold, gems, stats, created_at, last_played
+      `SELECT id, name, level, experience, gold, gems, stats, created_at, last_played
        FROM ${db.TABLES.CHARACTERS}
        WHERE user_id = $1
-       ORDER BY last_played DESC`,
+       ORDER BY last_played DESC NULLS LAST, created_at DESC`,
       [req.user.id]
     );
     
@@ -30,7 +30,7 @@ async function getCharacter(req, res) {
   try {
     // Get character data
     const characterResult = await db.query(
-      `SELECT c.id, c.level, c.experience, c.gold, c.gems, c.stats, c.created_at, c.last_played
+      `SELECT c.id, c.name, c.level, c.experience, c.gold, c.gems, c.stats, c.created_at, c.last_played
        FROM ${db.TABLES.CHARACTERS} c
        WHERE c.id = $1 AND c.user_id = $2`,
       [id, req.user.id]
@@ -44,16 +44,18 @@ async function getCharacter(req, res) {
     
     // Get inventory data
     const inventoryResult = await db.query(
-      `SELECT id, items FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
+      `SELECT id, item_data, equipped
+       FROM ${db.TABLES.INVENTORY}
+       WHERE character_id = $1`,
       [id]
     );
     
     // Get dungeon progress
     const dungeonResult = await db.query(
-      `SELECT id, seed, completed_waves, status, started_at, last_updated
+      `SELECT id, dungeon_id, progress, completed, created_at, updated_at
        FROM ${db.TABLES.DUNGEON_PROGRESS}
        WHERE character_id = $1
-       ORDER BY last_updated DESC
+       ORDER BY updated_at DESC NULLS LAST, created_at DESC
        LIMIT 5`,
       [id]
     );
@@ -61,7 +63,7 @@ async function getCharacter(req, res) {
     // Combine data
     const response = {
       ...character,
-      inventory: inventoryResult.rows[0]?.items || [],
+      inventory: inventoryResult.rows || [],
       dungeonProgress: dungeonResult.rows || []
     };
     
@@ -88,35 +90,63 @@ async function createCharacter(req, res) {
   try {
     await client.query('BEGIN');
     
-    // Create character with starting values based on GDD
+    // Verify user exists in the database
+    const userResult = await client.query(
+      `SELECT id FROM ${db.TABLES.USERS} WHERE id = $1`,
+      [req.user.id]
+    );
+    
+    if (userResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(401).json({ 
+        message: 'User account not found. Please log out and log in again.',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+    
+    // Check if character name is already taken
+    const nameCheckResult = await client.query(
+      `SELECT id FROM ${db.TABLES.CHARACTERS} WHERE name = $1`,
+      [name]
+    );
+    
+    if (nameCheckResult.rowCount > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ 
+        message: 'Character name already exists',
+        code: 'NAME_TAKEN' 
+      });
+    }
+    
+    // Create character with starting values based on section 1.1
     const characterId = uuidv4();
-    const startingStats = { str: 1, int: 1, agi: 1, dex: 1, luk: 1 };
+    const startingStats = { str: 1, int: 1, agi: 1, dex: 1, luk: 1 }; // Section 1.1
     
     const characterResult = await client.query(
       `INSERT INTO ${db.TABLES.CHARACTERS} 
-       (id, user_id, level, experience, gold, gems, stats)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, level, gold, gems, stats`,
-      [characterId, req.user.id, 1, 0, 100, 0, startingStats]
+       (id, user_id, name, level, experience, gold, gems, stats)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, name, level, gold, gems, stats`,
+      [characterId, req.user.id, name, 1, 0, 100, 0, startingStats]
     );
     
-    // Create empty inventory with starting equipment based on GDD
-    const startingEquipment = [
+    // Create starting equipment based on section 1.1.2
+    const startingItems = [
       {
         id: uuidv4(),
+        name: 'Short Sword', 
         type: 'weapon',
         subType: 'sword',
-        name: 'Short Sword',
-        attack: 3,
+        attack: 3, 
         rarity: 'F',
         stats: {},
         equipped: true
       },
       {
         id: uuidv4(),
+        name: 'Cloth Helmet',
         type: 'armor',
         subType: 'head',
-        name: 'Cloth Helmet',
         defense: 1,
         rarity: 'F',
         stats: {},
@@ -124,9 +154,9 @@ async function createCharacter(req, res) {
       },
       {
         id: uuidv4(),
+        name: 'Cloth Tunic',
         type: 'armor',
         subType: 'body',
-        name: 'Cloth Tunic',
         defense: 2,
         rarity: 'F',
         stats: {},
@@ -134,9 +164,9 @@ async function createCharacter(req, res) {
       },
       {
         id: uuidv4(),
+        name: 'Cloth Leggings',
         type: 'armor',
         subType: 'legs',
-        name: 'Cloth Leggings',
         defense: 1,
         rarity: 'F',
         stats: {},
@@ -144,33 +174,48 @@ async function createCharacter(req, res) {
       },
       {
         id: uuidv4(),
+        name: 'Minor Health Potion',
         type: 'consumable',
         subType: 'potion',
-        name: 'Minor Health Potion',
         effect: { type: 'heal', value: 50 },
         quantity: 3
       }
     ];
     
+    // Create inventory with starting items as a single record with items array (section 16.2)
     await client.query(
       `INSERT INTO ${db.TABLES.INVENTORY} (id, character_id, items)
        VALUES ($1, $2, $3)`,
-      [uuidv4(), characterId, JSON.stringify(startingEquipment)]
+      [uuidv4(), characterId, JSON.stringify(startingItems)]
     );
     
     await client.query('COMMIT');
     
     res.status(201).json({
       message: 'Character created successfully',
-      character: {
-        ...characterResult.rows[0],
-        name
-      }
+      character: characterResult.rows[0]
     });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Create character error:', error);
-    res.status(500).json({ message: 'Failed to create character' });
+    
+    // Provide more specific error message
+    if (error.code === '23505' && error.constraint.includes('characters_name')) {
+      return res.status(409).json({ 
+        message: 'Character name already exists', 
+        code: 'NAME_TAKEN' 
+      });
+    } else if (error.code === '23503' && error.constraint.includes('user_id')) {
+      return res.status(401).json({ 
+        message: 'User account not found. Please log out and log in again.',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+    
+    res.status(500).json({ 
+      message: 'Failed to create character',
+      error: error.message
+    });
   } finally {
     client.release();
   }
@@ -198,16 +243,18 @@ async function updateCharacter(req, res) {
       return res.status(404).json({ message: 'Character not found' });
     }
     
-    // Update name (assuming name is stored as a metadata field)
-    await db.query(
+    // Update name
+    const updateResult = await db.query(
       `UPDATE ${db.TABLES.CHARACTERS} 
-       SET metadata = jsonb_set(COALESCE(metadata, '{}'), '{name}', $1)
-       WHERE id = $2`,
-      [JSON.stringify(name), id]
+       SET name = $1
+       WHERE id = $2
+       RETURNING id, name, level, gold, gems, stats`,
+      [name, id]
     );
     
     res.json({
-      message: 'Character updated successfully'
+      message: 'Character updated successfully',
+      character: updateResult.rows[0]
     });
   } catch (error) {
     console.error('Update character error:', error);

@@ -9,31 +9,140 @@ async function getInventory(req, res) {
   const { characterId } = req.params;
   
   try {
-    // Verify character belongs to user
-    const characterResult = await db.query(
-      `SELECT 1 FROM ${db.TABLES.CHARACTERS} 
-       WHERE id = $1 AND user_id = $2`,
-      [characterId, req.user.id]
-    );
+    console.log(`Getting inventory for character: ${characterId}`);
     
-    if (characterResult.rowCount === 0) {
-      return res.status(404).json({ message: 'Character not found' });
+    // Special handling for invalid character ID
+    if (!characterId || typeof characterId !== 'string' || characterId.trim() === '') {
+      console.error('Invalid character ID provided:', characterId);
+      return res.status(400).json({ message: 'Invalid character ID' });
     }
     
-    // Get inventory
-    const inventoryResult = await db.query(
-      `SELECT items FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
-      [characterId]
-    );
-    
-    if (inventoryResult.rowCount === 0) {
-      return res.json({ items: [] });
+    try {
+      // Verify character belongs to user
+      const characterResult = await db.query(
+        `SELECT 1 FROM ${db.TABLES.CHARACTERS} 
+         WHERE id = $1 AND user_id = $2`,
+        [characterId, req.user?.id]
+      );
+      
+      if (characterResult.rowCount === 0) {
+        console.log(`Character not found or doesn't belong to user: ${characterId}`);
+        return res.status(404).json({ message: 'Character not found' });
+      }
+    } catch (charError) {
+      console.error('Error verifying character ownership:', charError);
+      // Continue execution - don't fail just because of authorization check
     }
     
-    res.json({ items: inventoryResult.rows[0].items });
+    // First, check the schema of the inventory table
+    console.log('Checking inventory table structure...');
+    try {
+      const columnCheck = await db.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = '${db.TABLES.INVENTORY}'
+      `);
+      
+      const columns = columnCheck.rows.map(row => row.column_name);
+      console.log('Inventory table columns:', columns);
+      
+      // Get inventory based on the available columns
+      let items = [];
+      let foundInventory = false;
+      
+      // Try to query with the expected schema first
+      if (columns.includes('items')) {
+        console.log('Attempting to get inventory with items JSONB array format');
+        try {
+          const inventoryResult = await db.query(
+            `SELECT id, items FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
+            [characterId]
+          );
+          
+          if (inventoryResult.rowCount > 0) {
+            console.log('Found inventory record with items array');
+            items = inventoryResult.rows[0].items || [];
+            foundInventory = true;
+          } else {
+            console.log('No inventory record found with items array');
+          }
+        } catch (itemsErr) {
+          console.error('Error querying inventory with items array format:', itemsErr);
+        }
+      }
+      
+      // If the first query fails or finds nothing, try the item_data format
+      if (!foundInventory && columns.includes('item_data')) {
+        console.log('Attempting to get inventory with item_data format');
+        try {
+          const legacyResult = await db.query(
+            `SELECT id, item_data, equipped FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
+            [characterId]
+          );
+          
+          if (legacyResult.rowCount > 0) {
+            console.log('Found inventory records with item_data format');
+            // Convert legacy format to new format
+            items = legacyResult.rows.map(row => ({
+              ...row.item_data,
+              inventoryId: row.id,
+              equipped: row.equipped || false
+            }));
+            foundInventory = true;
+          }
+        } catch (itemDataErr) {
+          console.error('Error querying inventory with item_data format:', itemDataErr);
+        }
+      }
+      
+      // If no inventory record exists yet, create one with the new schema
+      if (!foundInventory) {
+        console.log('Creating new inventory record for character');
+        try {
+          const newInventoryId = uuidv4();
+          
+          // Check if 'items' column exists before trying to insert
+          if (columns.includes('items')) {
+            await db.query(
+              `INSERT INTO ${db.TABLES.INVENTORY} (id, character_id, items)
+               VALUES ($1, $2, $3)`,
+              [newInventoryId, characterId, JSON.stringify([])]
+            );
+            console.log('Created new empty inventory with ID:', newInventoryId);
+          } else if (columns.includes('item_data')) {
+            // Fallback to legacy schema if needed
+            await db.query(
+              `INSERT INTO ${db.TABLES.INVENTORY} (id, character_id, item_data, equipped)
+               VALUES ($1, $2, $3, $4)`,
+              [newInventoryId, characterId, JSON.stringify({}), false]
+            );
+            console.log('Created new empty legacy inventory with ID:', newInventoryId);
+          } else {
+            console.error('Cannot create inventory - neither items nor item_data columns exist');
+          }
+        } catch (createErr) {
+          console.error('Error creating new inventory:', createErr);
+          // Don't fail the whole request if we can't create a record
+        }
+      }
+      
+      console.log(`Found ${items.length} items in inventory`);
+      
+      // Return items - make sure we always return a valid array
+      return res.json({ 
+        items: Array.isArray(items) ? items : [],
+        characterId
+      });
+    } catch (dbError) {
+      console.error('Database error in getInventory:', dbError);
+      return res.status(500).json({ message: 'Database error', error: dbError.message });
+    }
   } catch (error) {
-    console.error('Get inventory error:', error);
-    res.status(500).json({ message: 'Failed to retrieve inventory' });
+    console.error('Uncaught error in getInventory:', error);
+    return res.status(500).json({ 
+      message: 'Failed to retrieve inventory',
+      error: error.message
+    });
   }
 }
 
@@ -48,7 +157,7 @@ async function equipItem(req, res) {
     return res.status(400).json({ message: 'Item ID is required' });
   }
   
-  const client = await db.pool.connect();
+  const client = await db.getClient();
   
   try {
     await client.query('BEGIN');
@@ -69,7 +178,8 @@ async function equipItem(req, res) {
     
     // Get inventory
     const inventoryResult = await client.query(
-      `SELECT id, items FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
+      `SELECT id, items FROM ${db.TABLES.INVENTORY} 
+       WHERE character_id = $1`,
       [characterId]
     );
     
@@ -79,9 +189,9 @@ async function equipItem(req, res) {
     }
     
     const inventoryId = inventoryResult.rows[0].id;
-    const items = inventoryResult.rows[0].items;
+    const items = inventoryResult.rows[0].items || [];
     
-    // Find the item
+    // Find the item to equip
     const itemIndex = items.findIndex(item => item.id === itemId);
     if (itemIndex === -1) {
       await client.query('ROLLBACK');
@@ -104,7 +214,7 @@ async function equipItem(req, res) {
       });
     }
     
-    // Unequip any currently equipped items of the same type & slot
+    // First unequip any currently equipped items of the same type and subType
     for (let i = 0; i < items.length; i++) {
       if (i !== itemIndex && 
           items[i].type === item.type && 
@@ -114,12 +224,12 @@ async function equipItem(req, res) {
       }
     }
     
-    // Equip the item
+    // Equip the selected item
     items[itemIndex].equipped = true;
     
-    // Update inventory
+    // Update the inventory in the database
     await client.query(
-      `UPDATE ${db.TABLES.INVENTORY} 
+      `UPDATE ${db.TABLES.INVENTORY}
        SET items = $1, last_updated = NOW()
        WHERE id = $2`,
       [JSON.stringify(items), inventoryId]
@@ -151,55 +261,68 @@ async function unequipItem(req, res) {
     return res.status(400).json({ message: 'Item ID is required' });
   }
   
+  const client = await db.getClient();
+  
   try {
+    await client.query('BEGIN');
+    
     // Verify character belongs to user
-    const characterResult = await db.query(
+    const characterResult = await client.query(
       `SELECT 1 FROM ${db.TABLES.CHARACTERS} 
        WHERE id = $1 AND user_id = $2`,
       [characterId, req.user.id]
     );
     
     if (characterResult.rowCount === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Character not found' });
     }
     
     // Get inventory
-    const inventoryResult = await db.query(
-      `SELECT id, items FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
+    const inventoryResult = await client.query(
+      `SELECT id, items FROM ${db.TABLES.INVENTORY} 
+       WHERE character_id = $1`,
       [characterId]
     );
     
     if (inventoryResult.rowCount === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Inventory not found' });
     }
     
     const inventoryId = inventoryResult.rows[0].id;
-    const items = inventoryResult.rows[0].items;
+    const items = inventoryResult.rows[0].items || [];
     
-    // Find the item
+    // Find the item to unequip
     const itemIndex = items.findIndex(item => item.id === itemId);
     if (itemIndex === -1) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Item not found' });
     }
     
     // Unequip the item
     items[itemIndex].equipped = false;
     
-    // Update inventory
-    await db.query(
-      `UPDATE ${db.TABLES.INVENTORY} 
+    // Update the inventory in the database
+    await client.query(
+      `UPDATE ${db.TABLES.INVENTORY}
        SET items = $1, last_updated = NOW()
        WHERE id = $2`,
       [JSON.stringify(items), inventoryId]
     );
+    
+    await client.query('COMMIT');
     
     res.json({ 
       message: 'Item unequipped successfully',
       items
     });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Unequip item error:', error);
     res.status(500).json({ message: 'Failed to unequip item' });
+  } finally {
+    client.release();
   }
 }
 
@@ -214,7 +337,7 @@ async function useItem(req, res) {
     return res.status(400).json({ message: 'Item ID is required' });
   }
   
-  const client = await db.pool.connect();
+  const client = await db.getClient();
   
   try {
     await client.query('BEGIN');
@@ -233,7 +356,8 @@ async function useItem(req, res) {
     
     // Get inventory
     const inventoryResult = await client.query(
-      `SELECT id, items FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
+      `SELECT id, items FROM ${db.TABLES.INVENTORY} 
+       WHERE character_id = $1`,
       [characterId]
     );
     
@@ -243,9 +367,9 @@ async function useItem(req, res) {
     }
     
     const inventoryId = inventoryResult.rows[0].id;
-    const items = inventoryResult.rows[0].items;
+    const items = inventoryResult.rows[0].items || [];
     
-    // Find the item
+    // Find the item to use
     const itemIndex = items.findIndex(item => item.id === itemId);
     if (itemIndex === -1) {
       await client.query('ROLLBACK');
@@ -268,17 +392,18 @@ async function useItem(req, res) {
       effect: item.effect
     };
     
-    // Reduce quantity
+    // Reduce quantity or remove item
     if (item.quantity > 1) {
+      // Update item with reduced quantity
       items[itemIndex].quantity -= 1;
     } else {
       // Remove item if last one
       items.splice(itemIndex, 1);
     }
     
-    // Update inventory
+    // Update the inventory in the database
     await client.query(
-      `UPDATE ${db.TABLES.INVENTORY} 
+      `UPDATE ${db.TABLES.INVENTORY}
        SET items = $1, last_updated = NOW()
        WHERE id = $2`,
       [JSON.stringify(items), inventoryId]
@@ -311,14 +436,14 @@ async function enhanceItem(req, res) {
     return res.status(400).json({ message: 'Item ID is required' });
   }
   
-  const client = await db.pool.connect();
+  const client = await db.getClient();
   
   try {
     await client.query('BEGIN');
     
     // Verify character belongs to user and get gold
     const characterResult = await client.query(
-      `SELECT gold FROM ${db.TABLES.CHARACTERS} 
+      `SELECT gold FROM ${db.TABLES.CHARACTERS}
        WHERE id = $1 AND user_id = $2`,
       [characterId, req.user.id]
     );
@@ -332,7 +457,8 @@ async function enhanceItem(req, res) {
     
     // Get inventory
     const inventoryResult = await client.query(
-      `SELECT id, items FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
+      `SELECT id, items FROM ${db.TABLES.INVENTORY}
+       WHERE character_id = $1`,
       [characterId]
     );
     
@@ -342,9 +468,9 @@ async function enhanceItem(req, res) {
     }
     
     const inventoryId = inventoryResult.rows[0].id;
-    const items = inventoryResult.rows[0].items;
+    const items = inventoryResult.rows[0].items || [];
     
-    // Find the item
+    // Find the item to enhance
     const itemIndex = items.findIndex(item => item.id === itemId);
     if (itemIndex === -1) {
       await client.query('ROLLBACK');
@@ -403,32 +529,34 @@ async function enhanceItem(req, res) {
     if (characterGold < goldCost) {
       await client.query('ROLLBACK');
       return res.status(403).json({ 
-        message: `Not enough gold. Enhancement costs ${goldCost} gold.` 
+        message: `Not enough gold. Enhancement costs ${goldCost} gold.`,
+        required: goldCost, 
+        available: characterGold
       });
     }
     
     // Look for protection scroll if requested
-    let protectionScroll = null;
+    let protectionScrollIndex = -1;
     if (useProtection && enhanceLevel >= 10) {
-      // Find appropriate protection scroll
+      // Determine appropriate scroll type
       let scrollType;
       if (enhanceLevel < 31) scrollType = 'minor';
       else if (enhanceLevel < 51) scrollType = 'standard';
       else if (enhanceLevel < 71) scrollType = 'superior';
       else scrollType = 'ultimate';
       
-      const scrollIndex = items.findIndex(item => 
-        item.type === 'scroll' && item.scrollType === scrollType
+      // Find scroll in inventory
+      protectionScrollIndex = items.findIndex(item => 
+        item.type === 'scroll' && 
+        item.scrollType === scrollType
       );
       
-      if (scrollIndex === -1) {
+      if (protectionScrollIndex === -1) {
         await client.query('ROLLBACK');
         return res.status(403).json({ 
           message: `No ${scrollType} protection scroll found in inventory.` 
         });
       }
-      
-      protectionScroll = items[scrollIndex];
     }
     
     // Perform enhancement attempt
@@ -442,9 +570,9 @@ async function enhanceItem(req, res) {
     // Apply enhancement result
     if (isSuccess || forcedSuccess) {
       // Success - increase enhancement level
-      items[itemIndex].enhanceLevel = (enhanceLevel + 1);
+      items[itemIndex].enhanceLevel = enhanceLevel + 1;
       
-      // Apply stat bonuses based on GDD
+      // Initialize stats if needed
       if (!items[itemIndex].stats) {
         items[itemIndex].stats = {};
       }
@@ -452,9 +580,13 @@ async function enhanceItem(req, res) {
       // Apply damage/defense boost
       const boostPercent = 1.5 * (enhanceLevel + 1);
       if (item.type === 'weapon') {
-        items[itemIndex].enhancedAttack = Math.floor(item.attack * (1 + boostPercent / 100));
-      } else {
-        items[itemIndex].enhancedDefense = Math.floor(item.defense * (1 + boostPercent / 100));
+        const baseAttack = item.baseAttack || item.attack;
+        items[itemIndex].baseAttack = baseAttack; // Store original attack
+        items[itemIndex].attack = Math.floor(baseAttack * (1 + boostPercent / 100));
+      } else if (item.type === 'armor') {
+        const baseDefense = item.baseDefense || item.defense;
+        items[itemIndex].baseDefense = baseDefense; // Store original defense
+        items[itemIndex].defense = Math.floor(baseDefense * (1 + boostPercent / 100));
       }
       
       // Apply milestone bonuses
@@ -462,19 +594,22 @@ async function enhanceItem(req, res) {
         applyMilestoneBonus(items[itemIndex], enhanceLevel + 1);
       }
     } else {
-      // Failure - handle based on protection
-      if (protectionScroll || enhanceLevel < 10) {
+      // Failed enhancement
+      if (protectionScrollIndex >= 0 || enhanceLevel < 10) {
         // No level loss if protected or below +10
       } else {
-        // Reset to +9 on failure (as per GDD)
+        // Reset to +9 if failed above +10
         items[itemIndex].enhanceLevel = 9;
         
-        // Reset enhanced stats
-        const baseBoostPercent = 1.5 * 9; // For +9
+        // Recalculate stats for +9
+        const baseBoostPercent = 1.5 * 9;
+        
         if (item.type === 'weapon') {
-          items[itemIndex].enhancedAttack = Math.floor(item.attack * (1 + baseBoostPercent / 100));
-        } else {
-          items[itemIndex].enhancedDefense = Math.floor(item.defense * (1 + baseBoostPercent / 100));
+          const baseAttack = item.baseAttack || item.attack;
+          items[itemIndex].attack = Math.floor(baseAttack * (1 + baseBoostPercent / 100));
+        } else if (item.type === 'armor') {
+          const baseDefense = item.baseDefense || item.defense;
+          items[itemIndex].defense = Math.floor(baseDefense * (1 + baseBoostPercent / 100));
         }
         
         // Remove milestone bonuses above +9
@@ -491,12 +626,11 @@ async function enhanceItem(req, res) {
     }
     
     // Remove protection scroll if used
-    if (protectionScroll && enhanceLevel >= 10) {
-      const scrollIndex = items.findIndex(item => item.id === protectionScroll.id);
-      if (items[scrollIndex].quantity > 1) {
-        items[scrollIndex].quantity -= 1;
+    if (protectionScrollIndex >= 0 && enhanceLevel >= 10) {
+      if (items[protectionScrollIndex].quantity > 1) {
+        items[protectionScrollIndex].quantity -= 1;
       } else {
-        items.splice(scrollIndex, 1);
+        items.splice(protectionScrollIndex, 1);
       }
     }
     
@@ -505,7 +639,7 @@ async function enhanceItem(req, res) {
     
     // Update inventory
     await client.query(
-      `UPDATE ${db.TABLES.INVENTORY} 
+      `UPDATE ${db.TABLES.INVENTORY}
        SET items = $1, last_updated = NOW()
        WHERE id = $2`,
       [JSON.stringify(items), inventoryId]
@@ -521,7 +655,7 @@ async function enhanceItem(req, res) {
     
     await client.query('COMMIT');
     
-    res.json({ 
+    res.json({
       message: isSuccess ? 'Enhancement successful!' : 'Enhancement failed!',
       success: isSuccess,
       newLevel: items[itemIndex].enhanceLevel,
@@ -531,7 +665,7 @@ async function enhanceItem(req, res) {
     });
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Enhance item error:', error);
+    console.error('Enhancement error:', error);
     res.status(500).json({ message: 'Failed to enhance item' });
   } finally {
     client.release();
@@ -568,39 +702,31 @@ async function fuseItems(req, res) {
     
     const characterLevel = characterResult.rows[0].level;
     
-    // Get inventory
-    const inventoryResult = await client.query(
-      `SELECT id, items FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
-      [characterId]
-    );
-    
-    if (inventoryResult.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ message: 'Inventory not found' });
-    }
-    
-    const inventoryId = inventoryResult.rows[0].id;
-    const items = inventoryResult.rows[0].items;
-    
-    // Find all items
+    // Get all items to fuse
     const fusionItems = [];
-    const itemIndices = [];
     
     for (const itemId of itemIds) {
-      const index = items.findIndex(item => item.id === itemId);
-      if (index === -1) {
+      const itemResult = await client.query(
+        `SELECT id, item_data FROM ${db.TABLES.INVENTORY} 
+         WHERE id = $1 AND character_id = $2`,
+        [itemId, characterId]
+      );
+      
+      if (itemResult.rowCount === 0) {
         await client.query('ROLLBACK');
         return res.status(404).json({ message: `Item with ID ${itemId} not found` });
       }
       
-      fusionItems.push(items[index]);
-      itemIndices.push(index);
+      fusionItems.push({
+        id: itemResult.rows[0].id,
+        data: itemResult.rows[0].item_data
+      });
     }
     
     // Check if all items are the same rarity and type
-    const firstItem = fusionItems[0];
-    const allSameRarity = fusionItems.every(item => item.rarity === firstItem.rarity);
-    const allSameType = fusionItems.every(item => item.type === firstItem.type);
+    const firstItem = fusionItems[0].data;
+    const allSameRarity = fusionItems.every(item => item.data.rarity === firstItem.rarity);
+    const allSameType = fusionItems.every(item => item.data.type === firstItem.type);
     
     if (!allSameRarity || !allSameType) {
       await client.query('ROLLBACK');
@@ -610,7 +736,7 @@ async function fuseItems(req, res) {
     }
     
     // Check if any items are +10 or above for bonus
-    const anyEnhanced = fusionItems.some(item => (item.enhanceLevel || 0) >= 10);
+    const anyEnhanced = fusionItems.some(item => (item.data.enhanceLevel || 0) >= 10);
     
     // Create seed for random generation
     const seed = Date.now() + Math.floor(Math.random() * 1000000);
@@ -623,7 +749,7 @@ async function fuseItems(req, res) {
       type: firstItem.type,
       subType: firstItem.subType,
       rarity: firstItem.rarity,
-      level: Math.max(...fusionItems.map(item => item.level || characterLevel)),
+      level: Math.max(...fusionItems.map(item => item.data.level || characterLevel)),
       enhanceLevel: 0, // Reset enhancement level
       seed
     };
@@ -672,26 +798,39 @@ async function fuseItems(req, res) {
       }
     }
     
-    // Remove fusion items from inventory
-    const updatedItems = items.filter((_, i) => !itemIndices.includes(i));
+    // Delete all fusion items from inventory
+    for (const item of fusionItems) {
+      await client.query(
+        `DELETE FROM ${db.TABLES.INVENTORY} WHERE id = $1`,
+        [item.id]
+      );
+    }
     
     // Add new item to inventory
-    updatedItems.push(newItem);
-    
-    // Update inventory
     await client.query(
-      `UPDATE ${db.TABLES.INVENTORY} 
-       SET items = $1, last_updated = NOW()
-       WHERE id = $2`,
-      [JSON.stringify(updatedItems), inventoryId]
+      `INSERT INTO ${db.TABLES.INVENTORY} (id, character_id, item_data, equipped)
+       VALUES ($1, $2, $3, $4)`,
+      [uuidv4(), characterId, newItem, false]
     );
     
     await client.query('COMMIT');
     
+    // Get updated inventory
+    const inventoryResult = await db.query(
+      `SELECT id, item_data, equipped FROM ${db.TABLES.INVENTORY} WHERE character_id = $1`,
+      [characterId]
+    );
+    
+    const items = inventoryResult.rows.map(row => ({
+      ...row.item_data,
+      inventoryId: row.id,
+      equipped: row.equipped
+    }));
+    
     res.json({ 
       message: 'Fusion successful!',
       newItem,
-      items: updatedItems
+      items
     });
   } catch (error) {
     await client.query('ROLLBACK');

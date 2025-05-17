@@ -8,6 +8,76 @@
     <meta name="description" content="Classless RPG with seed-based procedural generation" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
     <meta name="theme-color" content="#ffffff" />
+    <!-- Multiple CSS loading strategies for redundancy -->
+    <link rel="stylesheet" href="/main.css" type="text/css" media="all" />
+    <link rel="stylesheet" href="/assets/index.css" type="text/css" media="all" />
+    <link rel="stylesheet" href="/override.css" type="text/css" media="all" />
+    <!-- Critical inline styles as fallback -->
+    <style>
+      :root {
+        --primary-color: #3498db;
+        --primary-dark: #2980b9;
+        --secondary-color: #e74c3c;
+        --secondary-dark: #c0392b;
+        --text-color: #333;
+        --light-text: #f8f8f8;
+        --bg-color: #f4f4f4;
+        --card-bg: #fff;
+        --border-color: #ddd;
+        --success-color: #2ecc71;
+        --warning-color: #f39c12;
+        --error-color: #e74c3c;
+      }
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.6;
+        color: var(--text-color);
+        background-color: var(--bg-color);
+        margin: 0;
+        padding: 0;
+      }
+      .auth-page {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #2c3e50 0%, #1a2a38 100%);
+        padding: 1rem;
+      }
+      .character-select-page {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        min-height: calc(100vh - 60px);
+        background: linear-gradient(135deg, #2c3e50 0%, #1a2a38 100%);
+        padding: 2rem 1rem;
+      }
+      .character-create-page {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        min-height: calc(100vh - 60px);
+        background: linear-gradient(135deg, #2c3e50 0%, #1a2a38 100%);
+        padding: 2rem 1rem;
+      }
+      .app-layout {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        background-color: var(--bg-color);
+      }
+      .app-header {
+        background-color: #2c3e50;
+        color: #fff;
+        padding: 0 1rem;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      /* This CSS will be used until the external CSS loads */
+    </style>
   </head>
   <body>
     <div id="root"></div>

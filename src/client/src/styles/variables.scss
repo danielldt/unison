@@ -28,6 +28,20 @@
   --rarity-raid: #fff176;
 }
 
+// SCSS Color variables as fallback
+$primary-color: #3498db;
+$primary-dark: #2980b9;
+$secondary-color: #e74c3c;
+$secondary-dark: #c0392b;
+$text-color: #333;
+$light-text: #f8f8f8;
+$bg-color: #f4f4f4;
+$card-bg: #fff;
+$border-color: #ddd;
+$success-color: #2ecc71;
+$warning-color: #f39c12;
+$error-color: #e74c3c;
+
 /* Breakpoints */
 $mobile: 480px;
 $tablet: 768px;

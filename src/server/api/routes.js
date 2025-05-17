@@ -3,6 +3,7 @@ const authController = require('./controllers/authController');
 const characterController = require('./controllers/characterController');
 const dungeonController = require('./controllers/dungeonController');
 const inventoryController = require('./controllers/inventoryController');
+const enhancementController = require('./controllers/enhancementController');
 const craftingController = require('./controllers/craftingController');
 const eventController = require('./controllers/eventController');
 const { authenticateToken } = require('./middleware/auth');
@@ -16,6 +17,7 @@ router.post('/auth/login', rateLimit('auth'), authController.login);
 router.post('/auth/refresh', rateLimit('auth'), authController.refreshToken);
 router.post('/auth/forgot-password', rateLimit('auth'), authController.forgotPassword);
 router.post('/auth/reset-password', rateLimit('auth'), authController.resetPassword);
+router.get('/auth/verify', authenticateToken, authController.verifyToken);
 
 // Character routes - authenticated
 router.get('/characters', authenticateToken, rateLimit('read'), characterController.getCharacters);
@@ -29,7 +31,7 @@ router.get('/inventory/:characterId', authenticateToken, rateLimit('read'), inve
 router.post('/inventory/:characterId/equip', authenticateToken, rateLimit('write'), inventoryController.equipItem);
 router.post('/inventory/:characterId/unequip', authenticateToken, rateLimit('write'), inventoryController.unequipItem);
 router.post('/inventory/:characterId/use', authenticateToken, rateLimit('write'), inventoryController.useItem);
-router.post('/inventory/:characterId/enhance', authenticateToken, rateLimit('write'), inventoryController.enhanceItem);
+router.post('/inventory/:characterId/enhance', authenticateToken, rateLimit('write'), enhancementController.enhanceItem);
 router.post('/inventory/:characterId/fusion', authenticateToken, rateLimit('write'), inventoryController.fuseItems);
 
 // Crafting routes

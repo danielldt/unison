@@ -1,29 +1,20 @@
-/* Base styles */
-:root {
-  --primary-color: #3498db;
-  --primary-dark: #2980b9;
-  --secondary-color: #e74c3c;
-  --secondary-dark: #c0392b;
-  --text-color: #333;
-  --light-text: #f8f8f8;
-  --bg-color: #f4f4f4;
-  --card-bg: #fff;
-  --border-color: #ddd;
-  --success-color: #2ecc71;
-  --warning-color: #f39c12;
-  --error-color: #e74c3c;
-  
-  --rarity-f: #9e9e9e;
-  --rarity-e: #a5d6a7;
-  --rarity-d: #90caf9;
-  --rarity-c: #ce93d8;
-  --rarity-b: #ffcc80;
-  --rarity-a: #ef9a9a;
-  --rarity-s: #b39ddb;
-  --rarity-ss: #81d4fa;
-  --rarity-sss: #fff176;
-}
+@use 'variables' as *;
+@use "sass:color";
 
+/* Import all component styles */
+@forward 'auth';
+@forward 'layout';
+@forward 'character-select';
+@forward 'character-create';
+@forward 'game';
+@forward 'inventory';
+@forward 'dungeon';
+@forward 'crafting';
+@forward 'enhancement';
+@forward 'combat-effects';
+@forward 'environment-effect';
+
+/* Base styles */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -31,7 +22,7 @@
 }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: $font-family;
   line-height: 1.6;
   color: var(--text-color);
   background-color: var(--bg-color);
@@ -116,8 +107,8 @@ a {
 
 .card {
   background-color: var(--card-bg);
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: $border-radius-md;
+  box-shadow: $shadow-md;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
 }
@@ -220,51 +211,51 @@ a {
 }
 
 .gap-1 {
-  gap: 0.5rem;
+  gap: $space-sm;
 }
 
 .gap-2 {
-  gap: 1rem;
+  gap: $space-md;
 }
 
 .gap-3 {
-  gap: 1.5rem;
+  gap: $space-lg;
 }
 
 .gap-4 {
-  gap: 2rem;
+  gap: $space-xl;
 }
 
 .mt-1 {
-  margin-top: 0.5rem;
+  margin-top: $space-sm;
 }
 
 .mt-2 {
-  margin-top: 1rem;
+  margin-top: $space-md;
 }
 
 .mt-3 {
-  margin-top: 1.5rem;
+  margin-top: $space-lg;
 }
 
 .mt-4 {
-  margin-top: 2rem;
+  margin-top: $space-xl;
 }
 
 .mb-1 {
-  margin-bottom: 0.5rem;
+  margin-bottom: $space-sm;
 }
 
 .mb-2 {
-  margin-bottom: 1rem;
+  margin-bottom: $space-md;
 }
 
 .mb-3 {
-  margin-bottom: 1.5rem;
+  margin-bottom: $space-lg;
 }
 
 .mb-4 {
-  margin-bottom: 2rem;
+  margin-bottom: $space-xl;
 }
 
 .mx-auto {

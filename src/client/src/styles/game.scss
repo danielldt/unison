@@ -1,4 +1,5 @@
-@import './variables';
+@use 'variables' as *;
+@use "sass:color";
 
 .game-container {
   display: flex;

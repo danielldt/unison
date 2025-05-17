@@ -31,11 +31,48 @@ function GamePage() {
   const navigate = useNavigate();
   
   useEffect(() => {
-    // Load character inventory to get equipped items and skills
-    if (currentCharacter) {
-      fetchInventory(currentCharacter.id);
+    // Don't load inventory if the server is likely down
+    // Instead, rely on cached data when available
+    if (!currentCharacter) return;
+    
+    // Step 1: First check if we can use existing inventory data
+    if (items.length > 0) {
+      console.log('GamePage: Using existing inventory data, items count:', items.length);
+      return; // Use the inventory data we already have
     }
-  }, [currentCharacter, fetchInventory]);
+    
+    // Step 2: Try to recover from localStorage before making an API call
+    const cachedItems = localStorage.getItem('characterInventory');
+    if (cachedItems) {
+      try {
+        const parsedItems = JSON.parse(cachedItems);
+        if (Array.isArray(parsedItems) && parsedItems.length > 0) {
+          console.log('GamePage: Using cached inventory from localStorage, items count:', parsedItems.length);
+          // Directly update the inventory store with cached data
+          useInventoryStore.setState({ 
+            items: parsedItems,
+            isLoading: false,
+            error: 'Using cached inventory data' 
+          });
+          return;
+        }
+      } catch (err) {
+        console.error('GamePage: Error parsing cached inventory:', err);
+      }
+    }
+    
+    // Step 3: Only make API call as a last resort
+    console.log('GamePage: No cached inventory available, fetching from API');
+    try {
+      fetchInventory(currentCharacter.id)
+        .catch(err => {
+          console.error('GamePage: Failed to load inventory, using empty inventory', err);
+          // Game will continue with empty inventory
+        });
+    } catch (err) {
+      console.error('GamePage: Error in inventory fetch', err);
+    }
+  }, [currentCharacter, items.length]);
   
   useEffect(() => {
     // Join dungeon room on component mount

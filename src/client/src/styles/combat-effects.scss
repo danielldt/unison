@@ -1,4 +1,5 @@
-@import './variables';
+@use 'variables' as *;
+@use "sass:color";
 
 .combat-effect {
   position: absolute;

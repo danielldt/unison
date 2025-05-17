@@ -26,14 +26,17 @@ function InventoryPage() {
   };
 
   const handleEquip = () => {
-    if (selectedItem && !selectedItem.equipped) {
-      equipItem(selectedItem.id);
-    } else if (selectedItem && selectedItem.equipped) {
-      unequipItem(selectedItem.id);
+    if (!selectedItem || !currentCharacter) return;
+    
+    if (!selectedItem.equipped) {
+      equipItem(currentCharacter.id, selectedItem.id);
+    } else {
+      unequipItem(currentCharacter.id, selectedItem.id);
     }
   };
 
   const getRarityClass = (rarity) => {
+    if (!rarity) return 'rarity-common'; // Default to common rarity if undefined
     return `rarity-${rarity.toLowerCase()}`;
   };
 
@@ -101,10 +104,10 @@ function InventoryPage() {
           {selectedItem ? (
             <>
               <h2 className={`item-name ${getRarityClass(selectedItem.rarity)}`}>
-                {selectedItem.name}
+                {selectedItem.name || 'Unknown Item'}
                 {selectedItem.enhancement > 0 && <span className="enhancement">+{selectedItem.enhancement}</span>}
               </h2>
-              <div className="item-type">{selectedItem.type} - {selectedItem.subType}</div>
+              <div className="item-type">{selectedItem.type || 'Item'} {selectedItem.subType ? `- ${selectedItem.subType}` : ''}</div>
               <div className="item-stats">
                 {Object.entries(selectedItem.stats || {}).map(([stat, value]) => (
                   <div key={stat} className="stat-row">
@@ -113,7 +116,7 @@ function InventoryPage() {
                   </div>
                 ))}
               </div>
-              <div className="item-description">{selectedItem.description}</div>
+              <div className="item-description">{selectedItem.description || 'No description available.'}</div>
               <div className="item-actions">
                 <button onClick={handleEquip}>
                   {selectedItem.equipped ? 'Unequip' : 'Equip'}

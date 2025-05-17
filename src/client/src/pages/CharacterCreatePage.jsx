@@ -17,108 +17,115 @@ function CharacterCreatePage() {
     
     const character = await createCharacter(name);
     if (character) {
-      navigate('/');
+      navigate('/dashboard');
     }
   };
   
   return (
-    <div className="character-create-container">
-      <div className="character-create-card">
+    <div className="character-create-page">
+      <div className="page-header">
         <h1>Create a New Character</h1>
-        
-        {error && (
-          <div className="error-message">
-            {error}
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="character-form">
-          <div className="form-group">
-            <label htmlFor="character-name">Character Name</label>
-            <input
-              type="text"
-              id="character-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={isLoading}
-              required
-              maxLength={20}
-              placeholder="Enter character name"
-            />
-          </div>
+      </div>
+      
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+      
+      <div className="character-form-container">
+        <div className="form-section">
+          <h2>Character Information</h2>
           
-          <div className="character-info-box">
-            <h3>Starting Stats</h3>
-            <div className="stat-list">
-              <div className="stat-item">
-                <span className="stat-name">STR:</span>
-                <span className="stat-value">1</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-name">INT:</span>
-                <span className="stat-value">1</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-name">AGI:</span>
-                <span className="stat-value">1</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-name">DEX:</span>
-                <span className="stat-value">1</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-name">LUK:</span>
-                <span className="stat-value">1</span>
+          <form onSubmit={handleSubmit}>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="character-name">Character Name</label>
+                <input
+                  type="text"
+                  id="character-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={isLoading}
+                  required
+                  maxLength={20}
+                  placeholder="Enter character name"
+                />
               </div>
             </div>
             
-            <h3 className="mt-3">Starting Equipment</h3>
-            <div className="equipment-list">
-              <div className="equipment-item">
-                <span className="equipment-name">F-rank Short Sword</span>
-                <span className="equipment-stat">(+3 ATK)</span>
-              </div>
-              <div className="equipment-item">
-                <span className="equipment-name">F-rank Cloth Helmet</span>
-                <span className="equipment-stat">(+1 DEF)</span>
-              </div>
-              <div className="equipment-item">
-                <span className="equipment-name">F-rank Cloth Tunic</span>
-                <span className="equipment-stat">(+2 DEF)</span>
-              </div>
-              <div className="equipment-item">
-                <span className="equipment-name">F-rank Cloth Leggings</span>
-                <span className="equipment-stat">(+1 DEF)</span>
-              </div>
-              <div className="equipment-item">
-                <span className="equipment-name">Minor Health Potion</span>
-                <span className="equipment-stat">(x3)</span>
+            <div className="character-info-box">
+              <h3>Starting Stats</h3>
+              <div className="stat-allocation">
+                <div className="stats-grid">
+                  <div className="stat-item">
+                    <div className="stat-header">
+                      <span className="stat-name">Strength (STR)</span>
+                      <span className="stat-value">1</span>
+                    </div>
+                    <div className="stat-description">
+                      Increases physical damage and carrying capacity
+                    </div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-header">
+                      <span className="stat-name">Intelligence (INT)</span>
+                      <span className="stat-value">1</span>
+                    </div>
+                    <div className="stat-description">
+                      Increases magical damage and mana pool
+                    </div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-header">
+                      <span className="stat-name">Agility (AGI)</span>
+                      <span className="stat-value">1</span>
+                    </div>
+                    <div className="stat-description">
+                      Increases movement speed and evasion
+                    </div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-header">
+                      <span className="stat-name">Dexterity (DEX)</span>
+                      <span className="stat-value">1</span>
+                    </div>
+                    <div className="stat-description">
+                      Increases attack speed and accuracy
+                    </div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-header">
+                      <span className="stat-name">Luck (LUK)</span>
+                      <span className="stat-value">1</span>
+                    </div>
+                    <div className="stat-description">
+                      Increases critical hit chance and item drop rates
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             
-            <div className="character-note">
-              <p>You will be able to allocate stat points as you level up</p>
+            <div className="action-buttons">
+              <button 
+                type="button" 
+                className="cancel-button"
+                onClick={() => navigate('/')}
+                disabled={isLoading}
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                className="create-button"
+                disabled={isLoading || !name.trim()}
+              >
+                {isLoading ? 'Creating...' : 'Create Character'}
+              </button>
             </div>
-          </div>
-          
-          <div className="form-actions">
-            <button 
-              type="button" 
-              className="secondary-button"
-              onClick={() => navigate('/')}
-              disabled={isLoading}
-            >
-              Cancel
-            </button>
-            <button 
-              type="submit" 
-              className="primary-button"
-              disabled={isLoading || !name.trim()}
-            >
-              {isLoading ? 'Creating...' : 'Create Character'}
-            </button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
   );

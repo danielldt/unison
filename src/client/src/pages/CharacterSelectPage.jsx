@@ -20,12 +20,14 @@ function CharacterSelectPage() {
   
   const handleSelectCharacter = (character) => {
     setCurrentCharacter(character);
-    navigate('/game');
+    navigate('/dashboard');
   };
   
   return (
-    <div className="character-select-container">
-      <h1>Select Your Character</h1>
+    <div className="character-select-page">
+      <div className="page-header">
+        <h1>Select Your Character</h1>
+      </div>
       
       {error && (
         <div className="error-message">
@@ -33,54 +35,82 @@ function CharacterSelectPage() {
         </div>
       )}
       
-      {isLoading ? (
-        <div className="loading">Loading characters...</div>
-      ) : (
-        <>
-          {characters.length === 0 ? (
-            <div className="no-characters">
-              <p>You don't have any characters yet.</p>
-              <Link to="/create-character" className="primary-button">
-                Create a Character
-              </Link>
-            </div>
+      <div className="characters-container">
+        <div className="character-list">
+          {isLoading ? (
+            <div className="loading">Loading characters...</div>
           ) : (
-            <div className="characters-grid">
-              {characters.map(character => (
-                <div 
-                  key={character.id} 
-                  className="character-card"
-                  onClick={() => handleSelectCharacter(character)}
-                >
-                  <div className="character-icon">
-                    {/* This would be a character avatar */}
-                    <div className="avatar-placeholder">
-                      {character.name.charAt(0)}
-                    </div>
-                  </div>
-                  
-                  <div className="character-info">
-                    <h3>{character.name}</h3>
-                    <p>Level {character.level}</p>
-                    <div className="character-stats">
-                      <span>STR: {character.stats.str}</span>
-                      <span>INT: {character.stats.int}</span>
-                      <span>AGI: {character.stats.agi}</span>
-                      <span>DEX: {character.stats.dex}</span>
-                      <span>LUK: {character.stats.luk}</span>
-                    </div>
-                  </div>
+            <>
+              {characters.length === 0 ? (
+                <div className="no-characters">
+                  <div className="icon">👤</div>
+                  <div className="message">You don't have any characters yet.</div>
+                  <Link to="/create-character" className="create-button primary-button">
+                    Create a Character
+                  </Link>
                 </div>
-              ))}
-              
-              <Link to="/create-character" className="create-character-card">
-                <div className="plus-icon">+</div>
-                <p>Create New Character</p>
-              </Link>
-            </div>
+              ) : (
+                <div className="characters">
+                  {characters.map(character => (
+                    <div 
+                      key={character.id} 
+                      className="character-card"
+                      onClick={() => handleSelectCharacter(character)}
+                    >
+                      <div className="character-header">
+                        <div className="character-avatar">
+                          {character.name.charAt(0)}
+                        </div>
+                        
+                        <div className="character-info">
+                          <div className="character-name">{character.name}</div>
+                          <div className="character-level">Level {character.level}</div>
+                        </div>
+                      </div>
+                      
+                      <div className="character-stats">
+                        {character.stats && (
+                          <>
+                            <div className="stat">
+                              <span className="stat-name">STR:</span>
+                              <span className="stat-value">{character.stats.str}</span>
+                            </div>
+                            <div className="stat">
+                              <span className="stat-name">INT:</span>
+                              <span className="stat-value">{character.stats.int}</span>
+                            </div>
+                            <div className="stat">
+                              <span className="stat-name">AGI:</span>
+                              <span className="stat-value">{character.stats.agi}</span>
+                            </div>
+                            <div className="stat">
+                              <span className="stat-name">DEX:</span>
+                              <span className="stat-value">{character.stats.dex}</span>
+                            </div>
+                            <div className="stat">
+                              <span className="stat-name">LUK:</span>
+                              <span className="stat-value">{character.stats.luk}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
-        </>
-      )}
+        </div>
+        
+        <div className="character-actions">
+          <h2>Actions</h2>
+          <div className="action-buttons">
+            <Link to="/create-character" className="create-button">
+              <span className="icon">+</span> Create New Character
+            </Link>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

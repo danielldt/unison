@@ -212,10 +212,31 @@ function getWeightedRandom(rng, items, weights) {
   return rng.weightedChoice(items, weights);
 }
 
+/**
+ * Generate a unique seed string for a specific game element
+ * @param {string} baseString - Base string to build seed from
+ * @param {string} elementType - Type of element (dungeon, item, enemy, etc.)
+ * @returns {Object} - Seed object with seed string and numeric seed
+ */
+function generateUniqueSeed(baseString, elementType = 'generic') {
+  const timestamp = Date.now();
+  const randomPart = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+  const seedString = `${elementType}-${baseString}-${timestamp}-${randomPart}`;
+  const numericSeed = generateSeedFromString(seedString);
+  
+  return {
+    seedString,
+    numericSeed,
+    timestamp,
+    elementType
+  };
+}
+
 module.exports = {
   generateSeedFromString,
   generateDungeonSeed,
   createSeededRNG,
   getRandomInt,
-  getWeightedRandom
+  getWeightedRandom,
+  generateUniqueSeed
 }; 

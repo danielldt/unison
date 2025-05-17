@@ -30,25 +30,36 @@ function EnhancementPage() {
   };
 
   const handleEnhance = async () => {
-    if (!selectedItem) return;
+    if (!selectedItem || !currentCharacter) return;
     
     setEnhancing(true);
     try {
-      const enhanceResult = await enhanceItem(selectedItem.id);
-      setResult(enhanceResult);
+      const response = await enhanceItem(currentCharacter.id, selectedItem.id);
       
-      // Update the selected item with new enhancement level
-      if (enhanceResult.success) {
+      if (response && response.success) {
+        setResult({
+          success: true,
+          newLevel: response.newLevel,
+          message: response.message || 'Enhancement successful!'
+        });
+        
+        // Update the selected item with new enhancement level
         setSelectedItem({
           ...selectedItem,
-          enhancement: enhanceResult.newLevel
+          enhancement: response.newLevel
+        });
+      } else {
+        // Handle failed enhancement but valid response
+        setResult({
+          success: false,
+          message: response?.message || 'Enhancement failed'
         });
       }
     } catch (error) {
       console.error('Enhancement failed:', error);
       setResult({
         success: false,
-        message: 'An error occurred during enhancement'
+        message: error?.response?.data?.message || 'An error occurred during enhancement'
       });
     } finally {
       setEnhancing(false);

@@ -11,6 +11,7 @@ services:
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/unison
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=unison_legends_secret_key
+      - COLYSEUS_PRESENCE=local
     depends_on:
       - postgres
       - redis

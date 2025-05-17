@@ -18,6 +18,9 @@ export const useAuthStore = create((set, get) => ({
       localStorage.setItem('token', accessToken);
       localStorage.setItem('refreshToken', refreshToken);
       
+      // Set the auth header immediately
+      axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+      
       set({ 
         user, 
         token: accessToken, 
@@ -45,6 +48,9 @@ export const useAuthStore = create((set, get) => ({
       localStorage.setItem('token', accessToken);
       localStorage.setItem('refreshToken', refreshToken);
       
+      // Set the auth header immediately
+      axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+      
       set({ 
         user, 
         token: accessToken, 
@@ -67,6 +73,9 @@ export const useAuthStore = create((set, get) => ({
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
     
+    // Clear the auth header
+    delete axios.defaults.headers.common['Authorization'];
+    
     set({ 
       user: null, 
       token: null, 
@@ -76,70 +85,57 @@ export const useAuthStore = create((set, get) => ({
   },
   
   checkAuth: async () => {
+    set({ isLoading: true });
     const token = localStorage.getItem('token');
     const refreshToken = localStorage.getItem('refreshToken');
     
     if (!token || !refreshToken) {
-      set({ isAuthenticated: false });
+      set({ isAuthenticated: false, isLoading: false });
       return false;
     }
     
+    // Always set the Authorization header when checking auth
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    
     try {
-      // Setup axios interceptor for token refresh
-      axios.interceptors.response.use(
-        (response) => response,
-        async (error) => {
-          const originalRequest = error.config;
-          
-          if (error.response.status === 403 && !originalRequest._retry) {
-            originalRequest._retry = true;
-            
-            try {
-              const response = await axios.post('/api/auth/refresh', { 
-                refreshToken: get().refreshToken 
-              });
-              
-              const { accessToken } = response.data;
-              localStorage.setItem('token', accessToken);
-              set({ token: accessToken });
-              
-              // Update the token in the current request
-              originalRequest.headers['Authorization'] = `Bearer ${accessToken}`;
-              return axios(originalRequest);
-            } catch (refreshError) {
-              // If refresh fails, logout
-              get().logout();
-              return Promise.reject(refreshError);
-            }
-          }
-          
-          return Promise.reject(error);
-        }
-      );
-      
-      // Set default auth header
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      
-      // Fetch user profile to validate token
-      const response = await axios.get('/api/characters');
-      set({ isAuthenticated: true });
+      // Verify token is valid by calling the auth/verify endpoint
+      await axios.get('/api/auth/verify');
+      set({ isAuthenticated: true, isLoading: false });
       return true;
     } catch (error) {
-      if (error.response?.status === 403) {
-        // Try to refresh token
+      console.log('Auth check error:', error);
+      
+      // Token is invalid or expired, try to refresh
+      if (error.response?.status === 401 || error.response?.status === 403) {
         try {
           const response = await axios.post('/api/auth/refresh', { refreshToken });
           const { accessToken } = response.data;
           
           localStorage.setItem('token', accessToken);
-          set({ token: accessToken, isAuthenticated: true });
-          return true;
+          
+          // Update the auth header with the new token
+          axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+          
+          // Verify the new token works
+          try {
+            await axios.get('/api/auth/verify');
+            set({ token: accessToken, isAuthenticated: true, isLoading: false });
+            return true;
+          } catch (verifyError) {
+            console.log('New token verification error:', verifyError);
+            get().logout();
+            set({ isLoading: false });
+            return false;
+          }
         } catch (refreshError) {
+          console.log('Token refresh error:', refreshError);
           get().logout();
+          set({ isLoading: false });
           return false;
         }
       } else {
         get().logout();
+        set({ isLoading: false });
         return false;
       }
     }

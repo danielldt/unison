@@ -9,7 +9,7 @@ const getActiveEvents = async (req, res) => {
     
     const result = await db.query(
       `SELECT * FROM ${db.TABLES.EVENT}
-       WHERE start_time <= $1 AND end_time >= $1 AND status = 'ACTIVE'
+       WHERE start_time <= $1 AND end_time >= $1
        ORDER BY end_time ASC`,
       [now]
     );
@@ -60,7 +60,7 @@ const joinEvent = async (req, res) => {
     // Check if event exists and is active
     const eventResult = await db.query(
       `SELECT * FROM ${db.TABLES.EVENT}
-       WHERE id = $1 AND status = 'ACTIVE' AND start_time <= NOW() AND end_time >= NOW()`,
+       WHERE id = $1 AND start_time <= NOW() AND end_time >= NOW()`,
       [eventId]
     );
     
@@ -202,7 +202,7 @@ const createEvent = async (req, res) => {
 const updateEvent = async (req, res) => {
   try {
     const eventId = req.params.id;
-    const { name, description, startTime, endTime, status, parameters, rewards } = req.body;
+    const { name, description, startTime, endTime, parameters, rewards } = req.body;
     
     // Get existing event
     const existingResult = await db.query(
@@ -221,15 +221,14 @@ const updateEvent = async (req, res) => {
     const result = await db.query(
       `UPDATE ${db.TABLES.EVENT}
        SET name = $1, description = $2, start_time = $3, end_time = $4,
-           status = $5, parameters = $6, rewards = $7
-       WHERE id = $8
+           parameters = $5, rewards = $6
+       WHERE id = $7
        RETURNING *`,
       [
         name || existingEvent.name,
         description !== undefined ? description : existingEvent.description,
         startTime || existingEvent.start_time,
         endTime || existingEvent.end_time,
-        status || existingEvent.status,
         parameters || existingEvent.parameters,
         rewards || existingEvent.rewards,
         eventId

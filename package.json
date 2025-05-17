@@ -7,8 +7,8 @@
     "start": "node src/server/index.js",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "nodemon src/server/index.js",
-    "dev:client": "cd src/client && vite",
-    "build": "cd src/client && vite build",
+    "dev:client": "cd src/client && npx vite",
+    "build": "node build.js",
     "test": "jest",
     "install-all": "npm install && cd src/client && npm install"
   },
@@ -16,7 +16,7 @@
   "license": "MIT",
   "dependencies": {
     "bcrypt": "^5.1.1",
-    "colyseus": "^0.15.0",
+    "colyseus": "^0.15.10",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",

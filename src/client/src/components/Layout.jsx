@@ -1,4 +1,4 @@
-import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useCharacterStore } from '../stores/characterStore';
 import { useState, useEffect } from 'react';
@@ -9,10 +9,14 @@ function Layout() {
   const { currentCharacter, clearCurrentCharacter } = useCharacterStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   
   // If no character is selected, redirect to character select
+  // BUT allow the create-character route to be accessed directly
   useEffect(() => {
-    if (!currentCharacter && window.location.pathname !== '/') {
+    if (!currentCharacter && 
+        window.location.pathname !== '/' && 
+        window.location.pathname !== '/create-character') {
       navigate('/');
     }
   }, [currentCharacter, navigate]);
@@ -28,47 +32,54 @@ function Layout() {
   };
   
   return (
-    <div className="game-layout">
-      <header className="game-header">
+    <div className="app-layout">
+      <header className="app-header">
         <div className="logo">
           <h1>Unison Legends</h1>
         </div>
         
         {currentCharacter && (
-          <div className="character-info">
-            <span className="character-name">{currentCharacter.name}</span>
+          <div className="user-section">
+            <span className="username">{currentCharacter.name}</span>
             <span className="character-level">Level {currentCharacter.level}</span>
           </div>
         )}
         
-        <button className="menu-toggle" onClick={toggleMenu}>
+        <button className="mobile-menu-button" onClick={toggleMenu}>
           Menu
         </button>
       </header>
       
-      <aside className={`game-sidebar ${menuOpen ? 'open' : ''}`}>
-        <nav className="game-nav">
+      <div className={`mobile-nav ${menuOpen ? 'open' : ''}`}>
+        <nav className="nav-links">
           <ul>
             <li>
               <Link to="/" onClick={() => setMenuOpen(false)}>Character Select</Link>
             </li>
-            {currentCharacter && (
+            {(currentCharacter || location.pathname === '/create-character') && (
               <>
-                <li>
-                  <Link to="/game" onClick={() => setMenuOpen(false)}>Game</Link>
-                </li>
-                <li>
-                  <Link to="/inventory" onClick={() => setMenuOpen(false)}>Inventory</Link>
-                </li>
-                <li>
-                  <Link to="/dungeon" onClick={() => setMenuOpen(false)}>Dungeons</Link>
-                </li>
-                <li>
-                  <Link to="/crafting" onClick={() => setMenuOpen(false)}>Crafting</Link>
-                </li>
-                <li>
-                  <Link to="/enhancement" onClick={() => setMenuOpen(false)}>Enhancement</Link>
-                </li>
+                {location.pathname !== '/create-character' && (
+                  <>
+                    <li>
+                      <Link to="/dashboard" onClick={() => setMenuOpen(false)}>Dashboard</Link>
+                    </li>
+                    <li>
+                      <Link to="/game" onClick={() => setMenuOpen(false)}>Game</Link>
+                    </li>
+                    <li>
+                      <Link to="/inventory" onClick={() => setMenuOpen(false)}>Inventory</Link>
+                    </li>
+                    <li>
+                      <Link to="/dungeons" onClick={() => setMenuOpen(false)}>Dungeons</Link>
+                    </li>
+                    <li>
+                      <Link to="/crafting" onClick={() => setMenuOpen(false)}>Crafting</Link>
+                    </li>
+                    <li>
+                      <Link to="/enhancement" onClick={() => setMenuOpen(false)}>Enhancement</Link>
+                    </li>
+                  </>
+                )}
               </>
             )}
             <li>
@@ -78,13 +89,13 @@ function Layout() {
             </li>
           </ul>
         </nav>
-      </aside>
+      </div>
       
-      <main className="game-content">
+      <main className="app-content">
         <Outlet />
       </main>
       
-      <footer className="game-footer">
+      <footer className="app-footer">
         <p>&copy; 2023 Unison Legends</p>
       </footer>
     </div>

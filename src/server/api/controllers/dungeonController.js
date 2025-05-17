@@ -26,55 +26,98 @@ async function getAvailableDungeons(req, res) {
       return res.status(404).json({ message: 'Character not found' });
     }
     
+    // Get the character's level
     const characterLevel = characterResult.rows[0].level;
     
-    // Get balance parameters from database
-    const balanceResult = await db.query(
-      `SELECT parameter_key, value FROM ${db.TABLES.BALANCE_PARAMETERS}
-       WHERE parameter_key IN ('drop_rate_multiplier', 'rarity_threshold_adjustment', 'global_difficulty_modifier')`
-    );
+    // Get balance parameters for dungeon generation
+    let balanceParams = {};
+    try {
+      const balanceResult = await db.query(
+        `SELECT parameter_key, value FROM ${db.TABLES.BALANCE_PARAMETERS}
+         WHERE parameter_key IN ('drop_rate_multiplier', 'rarity_threshold_adjustment', 'global_difficulty_modifier')`
+      );
+      
+      // Convert to object
+      balanceResult.rows.forEach(row => {
+        balanceParams[row.parameter_key] = parseFloat(row.value);
+      });
+    } catch (balanceError) {
+      console.error('Error retrieving balance parameters:', balanceError);
+      // If balance parameters fail, use default values
+      balanceParams = {
+        'drop_rate_multiplier': 1.0,
+        'rarity_threshold_adjustment': 0.0,
+        'global_difficulty_modifier': 1.0
+      };
+    }
     
-    // Convert to object
-    const balanceParams = {};
-    balanceResult.rows.forEach(row => {
-      balanceParams[row.parameter_key] = parseFloat(row.value);
-    });
-    
-    // Generate a mix of dungeon types based on character level
+    // Get dungeons in progress from database
     const dungeons = [];
     
-    // Normal dungeons (always available)
-    for (let i = 0; i < 5; i++) {
-      const seed = `normal-${characterLevel}-${i}-${Date.now()}`;
-      const dungeon = generateDungeon(seed, characterLevel, 'normal', balanceParams);
-      dungeons.push(dungeon);
-    }
-    
-    // Elite dungeons (available from level 50)
-    if (characterLevel >= 50) {
-      for (let i = 0; i < 3; i++) {
-        const seed = `elite-${characterLevel}-${i}-${Date.now()}`;
-        const dungeon = generateDungeon(seed, characterLevel, 'elite', balanceParams);
-        dungeons.push(dungeon);
-      }
-    }
-    
-    // Raid dungeons (available from level 70, one per week)
-    if (characterLevel >= 70) {
-      // In a real implementation, we'd check if the player has already done the weekly raid
-      const hasCompletedWeeklyRaid = false;
+    try {
+      const dungeonResult = await db.query(
+        `SELECT dp.id, dp.seed, dp.status, dp.completed_waves, c.level 
+         FROM ${db.TABLES.DUNGEON_PROGRESS} dp
+         JOIN ${db.TABLES.CHARACTERS} c ON dp.character_id = c.id
+         WHERE dp.character_id = $1 AND dp.status = 'IN_PROGRESS'`,
+        [characterId]
+      );
       
-      if (!hasCompletedWeeklyRaid) {
-        const seed = `raid-${Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000))}`; // Weekly seed
-        const dungeon = generateDungeon(seed, characterLevel, 'raid', balanceParams);
-        dungeons.push(dungeon);
+      if (dungeonResult.rowCount > 0) {
+        for (const row of dungeonResult.rows) {
+          try {
+            // Skip if seed is missing
+            if (!row.seed) {
+              console.error(`Dungeon ${row.id} has no seed, skipping`);
+              continue;
+            }
+            
+            // Determine dungeon type from seed
+            let dungeonType = 'normal';
+            if (row.seed.includes('elite')) {
+              dungeonType = 'elite';
+            } else if (row.seed.includes('raid')) {
+              dungeonType = 'raid';
+            }
+            
+            // Regenerate dungeon from seed
+            console.log(`Regenerating dungeon with seed "${row.seed}", level ${row.level}, type ${dungeonType}`);
+            const dungeon = generateDungeon(row.seed, row.level, dungeonType, balanceParams);
+            
+            // Validate the regenerated dungeon
+            if (!dungeon.waves || dungeon.waves.length === 0) {
+              console.error(`Dungeon ${row.id} generated without waves, skipping`);
+              continue;
+            }
+            
+            // Fix name if undefined
+            if (!dungeon.name || dungeon.name.includes('undefined')) {
+              console.log(`Fixing invalid name for dungeon ${row.id}`);
+              dungeon.name = `${dungeonType.charAt(0).toUpperCase() + dungeonType.slice(1)} Dungeon`;
+            }
+            
+            // Add progress information
+            dungeon.progressId = row.id;
+            dungeon.status = row.status;
+            dungeon.completedWaves = row.completed_waves;
+            
+            dungeons.push(dungeon);
+          } catch (dungeonGenError) {
+            console.error('Error generating dungeon from saved seed:', dungeonGenError);
+            // Skip this dungeon if there's an error generating it
+          }
+        }
       }
+    } catch (dungeonQueryError) {
+      console.error('Error querying dungeon progress:', dungeonQueryError);
+      // If dungeon query fails, continue with empty dungeons array
     }
     
+    // Return available dungeons
     res.json({ dungeons });
   } catch (error) {
     console.error('Get available dungeons error:', error);
-    res.status(500).json({ message: 'Failed to retrieve available dungeons' });
+    res.status(500).json({ message: 'Failed to retrieve available dungeons', error: error.message });
   }
 }
 
@@ -103,21 +146,64 @@ async function generateDungeonFromAPI(req, res) {
     const characterLevel = characterResult.rows[0].level;
     
     // Get balance parameters
-    const balanceResult = await db.query(
-      `SELECT parameter_key, value FROM ${db.TABLES.BALANCE_PARAMETERS}
-       WHERE parameter_key IN ('drop_rate_multiplier', 'rarity_threshold_adjustment', 'global_difficulty_modifier')`
-    );
+    let balanceParams = {};
+    try {
+      const balanceResult = await db.query(
+        `SELECT parameter_key, value FROM ${db.TABLES.BALANCE_PARAMETERS}
+         WHERE parameter_key IN ('drop_rate_multiplier', 'rarity_threshold_adjustment', 'global_difficulty_modifier')`
+      );
+      
+      balanceResult.rows.forEach(row => {
+        balanceParams[row.parameter_key] = parseFloat(row.value);
+      });
+    } catch (balanceError) {
+      console.error('Error retrieving balance parameters:', balanceError);
+      // If balance parameters fail, use default values
+      balanceParams = {
+        'drop_rate_multiplier': 1.0,
+        'rarity_threshold_adjustment': 0.0,
+        'global_difficulty_modifier': 1.0
+      };
+    }
     
-    const balanceParams = {};
-    balanceResult.rows.forEach(row => {
-      balanceParams[row.parameter_key] = parseFloat(row.value);
-    });
+    let dungeonSeed;
     
-    // Generate a unique seed if not provided
-    const dungeonSeed = seed || generateUniqueSeed(`dungeon-${characterId}-${Date.now()}`, 'dungeon').seedString;
+    // Handle different seed formats
+    if (seed) {
+      if (typeof seed === 'object' && seed.adjective && seed.place && seed.object) {
+        // Format the seed to match what the generator expects
+        // Use a consistent format of Adjective_Place_Object_Timestamp
+        const timestamp = Date.now();
+        dungeonSeed = `${seed.adjective}_${seed.place}_${seed.object}_${timestamp}`;
+        console.log(`Created seed from components: ${dungeonSeed}`);
+      } else if (typeof seed === 'string') {
+        // If it's a string, use it directly (for backward compatibility)
+        dungeonSeed = seed;
+        console.log(`Using provided seed string: ${dungeonSeed}`);
+      } else {
+        // If invalid seed format, generate a unique one
+        const generatedSeed = generateUniqueSeed(`dungeon-${characterId}-${Date.now()}`, 'dungeon');
+        dungeonSeed = generatedSeed.seedString;
+        console.log(`Generated unique seed: ${dungeonSeed}`);
+      }
+    } else {
+      // No seed provided, generate a unique one
+      const generatedSeed = generateUniqueSeed(`dungeon-${characterId}-${Date.now()}`, 'dungeon');
+      dungeonSeed = generatedSeed.seedString;
+      console.log(`Generated unique seed (no seed provided): ${dungeonSeed}`);
+    }
     
     // Generate dungeon
+    console.log(`Generating dungeon with seed "${dungeonSeed}", level ${characterLevel}, type ${dungeonType}`);
     const dungeon = generateDungeon(dungeonSeed, characterLevel, dungeonType, balanceParams);
+    
+    if (!dungeon.waves || dungeon.waves.length === 0 || !dungeon.name || dungeon.name.includes('undefined')) {
+      console.error('Dungeon generation produced invalid result:', dungeon);
+      return res.status(500).json({ 
+        message: 'Failed to generate valid dungeon', 
+        error: 'Invalid dungeon data was generated'
+      });
+    }
     
     // Save dungeon progress to database
     const dungeonId = uuidv4();
@@ -134,7 +220,7 @@ async function generateDungeonFromAPI(req, res) {
     res.json(dungeon);
   } catch (error) {
     console.error('Generate dungeon error:', error);
-    res.status(500).json({ message: 'Failed to generate dungeon' });
+    res.status(500).json({ message: 'Failed to generate dungeon', error: error.message });
   }
 }
 
@@ -160,27 +246,59 @@ async function getDungeon(req, res) {
     
     const progress = progressResult.rows[0];
     
-    // Get balance parameters
-    const balanceResult = await db.query(
-      `SELECT parameter_key, value FROM ${db.TABLES.BALANCE_PARAMETERS}
-       WHERE parameter_key IN ('drop_rate_multiplier', 'rarity_threshold_adjustment', 'global_difficulty_modifier')`
-    );
+    // Log the retrieved seed for debugging
+    console.log(`Retrieved dungeon with seed: ${progress.seed}`);
     
-    const balanceParams = {};
-    balanceResult.rows.forEach(row => {
-      balanceParams[row.parameter_key] = parseFloat(row.value);
-    });
+    // Verify seed exists
+    if (!progress.seed) {
+      console.error('Dungeon has no seed value in the database');
+      return res.status(500).json({ message: 'Dungeon data corrupted (missing seed)' });
+    }
+    
+    // Get balance parameters
+    let balanceParams = {};
+    try {
+      const balanceResult = await db.query(
+        `SELECT parameter_key, value FROM ${db.TABLES.BALANCE_PARAMETERS}
+         WHERE parameter_key IN ('drop_rate_multiplier', 'rarity_threshold_adjustment', 'global_difficulty_modifier')`
+      );
+      
+      balanceResult.rows.forEach(row => {
+        balanceParams[row.parameter_key] = parseFloat(row.value);
+      });
+    } catch (balanceError) {
+      console.error('Error retrieving balance parameters:', balanceError);
+      // If balance parameters fail, use default values
+      balanceParams = {
+        'drop_rate_multiplier': 1.0,
+        'rarity_threshold_adjustment': 0.0,
+        'global_difficulty_modifier': 1.0
+      };
+    }
     
     // Determine dungeon type based on seed
     let dungeonType = 'normal';
-    if (progress.seed.startsWith('elite-')) {
+    if (progress.seed.startsWith('elite-') || progress.seed.includes('elite')) {
       dungeonType = 'elite';
-    } else if (progress.seed.startsWith('raid-')) {
+    } else if (progress.seed.startsWith('raid-') || progress.seed.includes('raid')) {
       dungeonType = 'raid';
     }
     
     // Regenerate dungeon from seed
+    console.log(`Regenerating dungeon with seed "${progress.seed}", level ${progress.level}, type ${dungeonType}`);
     const dungeon = generateDungeon(progress.seed, progress.level, dungeonType, balanceParams);
+    
+    // Validate generated dungeon
+    if (!dungeon.waves || dungeon.waves.length === 0) {
+      console.error('Generated dungeon has no waves:', dungeon);
+      return res.status(500).json({ message: 'Failed to regenerate dungeon properly (no waves)' });
+    }
+    
+    if (!dungeon.name || dungeon.name.includes('undefined')) {
+      console.error('Generated dungeon has invalid name:', dungeon.name);
+      // Fix the name if undefined
+      dungeon.name = `${dungeonType.charAt(0).toUpperCase() + dungeonType.slice(1)} Dungeon`;
+    }
     
     // Add progress information
     dungeon.progressId = progress.id;
@@ -191,7 +309,7 @@ async function getDungeon(req, res) {
     res.json(dungeon);
   } catch (error) {
     console.error('Get dungeon error:', error);
-    res.status(500).json({ message: 'Failed to retrieve dungeon' });
+    res.status(500).json({ message: 'Failed to retrieve dungeon', error: error.message });
   }
 }
 

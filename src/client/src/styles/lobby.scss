@@ -1,0 +1,229 @@
+.lobby-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  color: #e0e0e0;
+  
+  h1 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+  }
+  
+  .error-message {
+    background-color: rgba(220, 53, 69, 0.2);
+    color: #f8d7da;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+}
+
+.dungeon-info {
+  background-color: rgba(30, 30, 40, 0.8);
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+  
+  h2 {
+    margin-top: 0;
+    color: #ffd700;
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+  }
+  
+  .dungeon-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    
+    .detail-item {
+      display: flex;
+      align-items: center;
+      
+      .label {
+        font-weight: bold;
+        margin-right: 5px;
+        color: #aaa;
+      }
+      
+      .value {
+        color: #fff;
+      }
+    }
+  }
+}
+
+.lobby-main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  
+  @media (min-width: 768px) {
+    flex-direction: row;
+  }
+}
+
+.players-list {
+  flex: 2;
+  background-color: rgba(30, 30, 40, 0.8);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+  
+  h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #ffd700;
+  }
+  
+  .player-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: rgba(40, 40, 60, 0.8);
+    padding: 10px 15px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    
+    .player-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      
+      .player-name {
+        font-weight: bold;
+        color: #fff;
+      }
+      
+      .player-level {
+        color: #aaa;
+        font-size: 0.9rem;
+      }
+      
+      .host-badge {
+        background-color: #ffd700;
+        color: #222;
+        font-size: 0.7rem;
+        padding: 3px 6px;
+        border-radius: 10px;
+        font-weight: bold;
+      }
+    }
+    
+    .player-status {
+      .ready-btn, .ready-indicator {
+        padding: 5px 10px;
+        border-radius: 4px;
+        background-color: rgba(220, 53, 69, 0.3);
+        color: #f8d7da;
+        border: 1px solid rgba(220, 53, 69, 0.5);
+        cursor: pointer;
+        transition: all 0.2s;
+        
+        &.ready {
+          background-color: rgba(40, 167, 69, 0.3);
+          color: #d4edda;
+          border: 1px solid rgba(40, 167, 69, 0.5);
+        }
+      }
+      
+      .ready-btn {
+        font-size: 0.9rem;
+      }
+      
+      .ready-indicator {
+        display: inline-block;
+        font-size: 0.8rem;
+      }
+    }
+  }
+  
+  .invite-section {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    
+    .invite-code {
+      margin-bottom: 10px;
+      
+      span {
+        font-family: monospace;
+        background-color: rgba(0, 0, 0, 0.3);
+        padding: 3px 6px;
+        border-radius: 3px;
+        margin-left: 5px;
+      }
+    }
+    
+    .invite-btn, .test-btn {
+      background-color: #5865f2;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+      
+      &:hover {
+        background-color: #4752c4;
+      }
+    }
+    
+    .test-btn {
+      background-color: #6c757d;
+      
+      &:hover {
+        background-color: #5a6268;
+      }
+    }
+  }
+}
+
+.lobby-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  
+  @media (min-width: 768px) {
+    flex: 1;
+    justify-content: center;
+    align-items: stretch;
+  }
+  
+  .back-btn, .start-btn {
+    padding: 12px 20px;
+    border-radius: 6px;
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .back-btn {
+    background-color: #6c757d;
+    color: white;
+    
+    &:hover {
+      background-color: #5a6268;
+    }
+  }
+  
+  .start-btn {
+    background-color: #28a745;
+    color: white;
+    font-size: 1.1rem;
+    
+    &:hover {
+      background-color: #218838;
+    }
+    
+    &:disabled {
+      background-color: #84c791;
+      cursor: not-allowed;
+    }
+  }
+} 
