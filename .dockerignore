@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.git
+.github
+.gitignore
+.dockerignore
+.env
+.env.*
+*.md
+docker-compose.yml
+Dockerfile
+
+# Client build artifacts
+src/client/dist
+src/client/node_modules 

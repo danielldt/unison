@@ -1,0 +1,528 @@
+@import './variables';
+
+.combat-effect {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 100;
+  pointer-events: none;
+  
+  // Generic effect styling
+  .generic-effect {
+    font-size: 1.5rem;
+    color: white;
+    text-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
+    animation: float-up 1s ease-out;
+  }
+  
+  // Damage effect styling
+  .damage-effect {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #f8d7da;
+    text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+    animation: damage-pop 1s ease-out;
+    
+    &.critical {
+      font-size: 2.2rem;
+      color: #ffcc00;
+      text-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+      animation: critical-pop 1s ease-out;
+      
+      .critical-marker {
+        color: #ff3333;
+      }
+    }
+    
+    // Elemental damage styling
+    &.fire {
+      color: #ff6b6b;
+      text-shadow: 0 0 8px rgba(255, 0, 0, 0.8);
+    }
+    
+    &.ice {
+      color: #a5f2f3;
+      text-shadow: 0 0 8px rgba(0, 153, 255, 0.8);
+    }
+    
+    &.lightning {
+      color: #ffd166;
+      text-shadow: 0 0 8px rgba(255, 209, 102, 0.8);
+    }
+    
+    &.poison {
+      color: #a0e548;
+      text-shadow: 0 0 8px rgba(160, 229, 72, 0.8);
+    }
+    
+    &.holy {
+      color: #f9f871;
+      text-shadow: 0 0 8px rgba(249, 248, 113, 0.8);
+    }
+    
+    &.void {
+      color: #9b5de5;
+      text-shadow: 0 0 8px rgba(155, 93, 229, 0.8);
+    }
+    
+    &.corrupted {
+      color: #8338ec;
+      text-shadow: 0 0 8px rgba(131, 56, 236, 0.8);
+    }
+  }
+  
+  // Heal effect styling
+  .heal-effect {
+    font-size: 1.6rem;
+    font-weight: bold;
+    color: #c3e6cb;
+    text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+    animation: heal-pop 1.2s ease-out;
+    
+    &.critical {
+      font-size: 2rem;
+      color: #28a745;
+      text-shadow: 0 0 10px rgba(0, 128, 0, 0.8);
+      animation: critical-heal 1.2s ease-out;
+    }
+  }
+  
+  // Miss effect styling
+  .miss-effect {
+    font-size: 1.4rem;
+    font-style: italic;
+    color: #e2e3e5;
+    text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    animation: fade-out 0.8s ease-out;
+  }
+  
+  // Buff effect styling
+  .buff-effect {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    animation: buff-appear 1.5s ease-out;
+    
+    .buff-icon {
+      font-size: 2rem;
+      color: #28a745;
+    }
+    
+    .buff-text {
+      font-size: 1rem;
+      color: #c3e6cb;
+      text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    }
+  }
+  
+  // Debuff effect styling
+  .debuff-effect {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    animation: debuff-appear 1.5s ease-out;
+    
+    .debuff-icon {
+      font-size: 2rem;
+      color: #dc3545;
+    }
+    
+    .debuff-text {
+      font-size: 1rem;
+      color: #f8d7da;
+      text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    }
+  }
+  
+  // Defeat effect styling
+  .defeat-effect {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #dc3545;
+    text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
+    animation: defeat 2s ease-out;
+  }
+  
+  // Elemental effect styling
+  .elemental-effect {
+    width: 100px;
+    height: 100px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    
+    .elemental-animation {
+      width: 100%;
+      height: 100%;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+    
+    &.fire .elemental-animation {
+      background-image: radial-gradient(circle, rgba(255,107,107,0.8) 0%, rgba(255,107,107,0) 70%);
+      animation: fire-pulse 1.8s ease-out;
+    }
+    
+    &.ice .elemental-animation {
+      background-image: radial-gradient(circle, rgba(165,242,243,0.8) 0%, rgba(165,242,243,0) 70%);
+      animation: ice-crystallize 1.8s ease-out;
+    }
+    
+    &.lightning .elemental-animation {
+      background-image: radial-gradient(circle, rgba(255,209,102,0.8) 0%, rgba(255,209,102,0) 70%);
+      animation: lightning-zap 1.8s ease-out;
+    }
+    
+    &.poison .elemental-animation {
+      background-image: radial-gradient(circle, rgba(160,229,72,0.8) 0%, rgba(160,229,72,0) 70%);
+      animation: poison-spread 1.8s ease-out;
+    }
+    
+    &.holy .elemental-animation {
+      background-image: radial-gradient(circle, rgba(249,248,113,0.8) 0%, rgba(249,248,113,0) 70%);
+      animation: holy-glow 1.8s ease-out;
+    }
+    
+    &.void .elemental-animation {
+      background-image: radial-gradient(circle, rgba(155,93,229,0.8) 0%, rgba(155,93,229,0) 70%);
+      animation: void-collapse 1.8s ease-out;
+    }
+    
+    &.corrupted .elemental-animation {
+      background-image: radial-gradient(circle, rgba(131,56,236,0.8) 0%, rgba(131,56,236,0) 70%);
+      animation: corruption-spread 1.8s ease-out;
+    }
+  }
+}
+
+// Animations
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+}
+
+@keyframes damage-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  40% {
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes critical-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-5deg);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.4) rotate(5deg);
+  }
+  40% {
+    transform: scale(1.2) rotate(-3deg);
+  }
+  60% {
+    transform: scale(1.1) rotate(2deg);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-25px) scale(0.9);
+  }
+}
+
+@keyframes heal-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  40% {
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes critical-heal {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  40% {
+    transform: scale(1);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-25px) scale(1.1);
+  }
+}
+
+@keyframes fade-out {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.8;
+  }
+  80% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes buff-appear {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  40% {
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-15px);
+  }
+}
+
+@keyframes debuff-appear {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  40% {
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-15px);
+  }
+}
+
+@keyframes defeat {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  10% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  20% {
+    transform: scale(1.1);
+  }
+  40% {
+    transform: scale(1.2);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+@keyframes fire-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  25% {
+    opacity: 0.8;
+    transform: scale(1.1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(0.9);
+  }
+  75% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes ice-crystallize {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  30% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes lightning-zap {
+  0% {
+    opacity: 0;
+    clip-path: polygon(50% 0%, 50% 100%, 50% 100%, 50% 0%);
+  }
+  5% {
+    opacity: 1;
+    clip-path: polygon(25% 0%, 75% 0%, 75% 100%, 25% 100%);
+  }
+  10% {
+    opacity: 0.3;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
+  }
+}
+
+@keyframes poison-spread {
+  0% {
+    opacity: 0;
+    transform: scale(0.1);
+    border-radius: 50%;
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+    border-radius: 30%;
+  }
+}
+
+@keyframes holy-glow {
+  0% {
+    opacity: 0;
+    transform: scale(0.1);
+    box-shadow: 0 0 10px rgba(249, 248, 113, 0.8);
+  }
+  30% {
+    opacity: 0.8;
+    transform: scale(0.9);
+    box-shadow: 0 0 30px rgba(249, 248, 113, 0.8);
+  }
+  70% {
+    opacity: 1;
+    box-shadow: 0 0 50px rgba(249, 248, 113, 0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+    box-shadow: 0 0 70px rgba(249, 248, 113, 0.3);
+  }
+}
+
+@keyframes void-collapse {
+  0% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+  30% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.1);
+  }
+}
+
+@keyframes corruption-spread {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+    border-radius: 10%;
+  }
+  40% {
+    opacity: 0.8;
+    transform: scale(0.8);
+    border-radius: 30%;
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1);
+    border-radius: 20%;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+    border-radius: 40%;
+  }
+} 

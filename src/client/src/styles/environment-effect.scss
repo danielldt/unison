@@ -1,0 +1,443 @@
+@import './variables';
+
+.environment-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+  
+  // Environment overlay
+  .environment-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    opacity: 0.15;
+    transition: opacity 0.5s;
+  }
+  
+  // Environment description panel
+  .environment-description {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 250px;
+    background-color: rgba(0, 0, 0, 0.6);
+    border-radius: 8px;
+    padding: 12px;
+    color: #fff;
+    font-size: 0.9rem;
+    backdrop-filter: blur(4px);
+    z-index: 10;
+    pointer-events: auto;
+    transition: transform 0.3s, opacity 0.3s;
+    transform: translateX(270px);
+    opacity: 0;
+    
+    &:hover {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    
+    &::before {
+      content: "💫";
+      position: absolute;
+      left: -30px;
+      top: 10px;
+      background-color: rgba(0, 0, 0, 0.6);
+      padding: 5px;
+      border-radius: 4px 0 0 4px;
+      pointer-events: auto;
+    }
+    
+    h3 {
+      margin: 0 0 8px 0;
+      font-size: 1.1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      padding-bottom: 4px;
+    }
+    
+    p {
+      margin: 0 0 10px 0;
+      line-height: 1.4;
+      font-style: italic;
+    }
+    
+    .environment-effects {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      
+      .environment-effect {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        
+        .effect-icon {
+          font-size: 1.2rem;
+        }
+        
+        .effect-description {
+          flex: 1;
+          font-size: 0.8rem;
+        }
+      }
+    }
+  }
+  
+  // Environment types styling
+  &.fire {
+    .environment-overlay {
+      background: linear-gradient(45deg, rgba(255,107,107,0.4) 0%, rgba(255,107,107,0) 70%);
+    }
+    
+    .environment-description {
+      border-left: 3px solid #ff6b6b;
+      
+      h3 {
+        color: #ff6b6b;
+      }
+    }
+  }
+  
+  &.ice {
+    .environment-overlay {
+      background: linear-gradient(45deg, rgba(165,242,243,0.4) 0%, rgba(165,242,243,0) 70%);
+    }
+    
+    .environment-description {
+      border-left: 3px solid #a5f2f3;
+      
+      h3 {
+        color: #a5f2f3;
+      }
+    }
+  }
+  
+  &.poison {
+    .environment-overlay {
+      background: linear-gradient(45deg, rgba(160,229,72,0.4) 0%, rgba(160,229,72,0) 70%);
+    }
+    
+    .environment-description {
+      border-left: 3px solid #a0e548;
+      
+      h3 {
+        color: #a0e548;
+      }
+    }
+  }
+  
+  &.lightning {
+    .environment-overlay {
+      background: linear-gradient(45deg, rgba(255,209,102,0.4) 0%, rgba(255,209,102,0) 70%);
+    }
+    
+    .environment-description {
+      border-left: 3px solid #ffd166;
+      
+      h3 {
+        color: #ffd166;
+      }
+    }
+  }
+  
+  &.void {
+    .environment-overlay {
+      background: linear-gradient(45deg, rgba(155,93,229,0.4) 0%, rgba(155,93,229,0) 70%);
+    }
+    
+    .environment-description {
+      border-left: 3px solid #9b5de5;
+      
+      h3 {
+        color: #9b5de5;
+      }
+    }
+  }
+  
+  &.holy {
+    .environment-overlay {
+      background: linear-gradient(45deg, rgba(249,248,113,0.4) 0%, rgba(249,248,113,0) 70%);
+    }
+    
+    .environment-description {
+      border-left: 3px solid #f9f871;
+      
+      h3 {
+        color: #f9f871;
+      }
+    }
+  }
+  
+  &.corrupted {
+    .environment-overlay {
+      background: linear-gradient(45deg, rgba(131,56,236,0.4) 0%, rgba(131,56,236,0) 70%);
+    }
+    
+    .environment-description {
+      border-left: 3px solid #8338ec;
+      
+      h3 {
+        color: #8338ec;
+      }
+    }
+  }
+}
+
+// Fire effect
+.fire-effect {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  overflow: hidden;
+  
+  .fire-particle {
+    position: absolute;
+    bottom: -20px;
+    width: 12px;
+    height: 12px;
+    background-color: #ff6b6b;
+    border-radius: 50%;
+    filter: blur(4px);
+    opacity: 0.7;
+    animation: fire-rise 3s infinite;
+  }
+}
+
+// Ice effect
+.ice-effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  
+  .ice-particle {
+    position: absolute;
+    background-color: #a5f2f3;
+    border-radius: 3px;
+    filter: blur(1px);
+    animation: ice-shimmer 5s infinite;
+  }
+}
+
+// Poison effect
+.poison-effect {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 150px;
+  
+  .poison-bubble {
+    position: absolute;
+    bottom: 0;
+    background-color: rgba(160, 229, 72, 0.6);
+    border-radius: 50%;
+    animation: poison-rise 8s infinite;
+  }
+}
+
+// Lightning effect
+.lightning-effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  
+  .lightning-bolt {
+    position: absolute;
+    top: 0;
+    width: 4px;
+    height: 100%;
+    opacity: 0;
+    background: linear-gradient(to bottom, 
+      rgba(255,209,102,0) 0%,
+      rgba(255,209,102,0.8) 20%,
+      rgba(255,209,102,1) 40%,
+      rgba(255,209,102,0.8) 60%,
+      rgba(255,209,102,0) 100%);
+    filter: blur(2px);
+    animation: lightning-flash 10s infinite;
+    transform: skewX(-5deg);
+  }
+}
+
+// Void effect
+.void-effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  
+  .void-orb {
+    position: absolute;
+    background-color: rgba(155, 93, 229, 0.6);
+    border-radius: 50%;
+    filter: blur(4px);
+    box-shadow: 0 0 15px rgba(155, 93, 229, 0.5);
+    animation: void-pulse 10s infinite;
+  }
+}
+
+// Holy effect
+.holy-effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  
+  .light-beam {
+    position: absolute;
+    top: -100px;
+    height: calc(100% + 100px);
+    background: linear-gradient(to bottom, 
+      rgba(249,248,113,0.7) 0%,
+      rgba(249,248,113,0.3) 50%,
+      rgba(249,248,113,0) 100%);
+    animation: light-beam 6s infinite;
+  }
+}
+
+// Corrupted effect
+.corrupted-effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  
+  .corruption-tendril {
+    position: absolute;
+    background-color: rgba(131, 56, 236, 0.6);
+    border-radius: 4px;
+    filter: blur(2px);
+    transform-origin: bottom;
+    animation: corruption-grow 8s infinite;
+  }
+}
+
+// Animations
+
+@keyframes fire-rise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0.7;
+  }
+  
+  80% {
+    opacity: 0.2;
+  }
+  
+  100% {
+    transform: translateY(-100px) scale(0.3);
+    opacity: 0;
+  }
+}
+
+@keyframes ice-shimmer {
+  0% {
+    opacity: 0.2;
+  }
+  
+  50% {
+    opacity: 0.6;
+  }
+  
+  100% {
+    opacity: 0.2;
+  }
+}
+
+@keyframes poison-rise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0.7;
+  }
+  
+  70% {
+    opacity: 0.3;
+  }
+  
+  100% {
+    transform: translateY(-100px) scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes lightning-flash {
+  0%, 10%, 20%, 100% {
+    opacity: 0;
+  }
+  
+  5%, 15% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes void-pulse {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.8;
+  }
+  
+  50% {
+    transform: scale(1.2);
+    opacity: 0.2;
+  }
+  
+  100% {
+    transform: scale(0.5);
+    opacity: 0.8;
+  }
+}
+
+@keyframes light-beam {
+  0% {
+    opacity: 0;
+  }
+  
+  20% {
+    opacity: 1;
+  }
+  
+  50% {
+    opacity: 0.5;
+  }
+  
+  80% {
+    opacity: 0.2;
+  }
+  
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes corruption-grow {
+  0% {
+    transform: scaleY(0);
+    opacity: 0.7;
+  }
+  
+  50% {
+    transform: scaleY(1) scaleX(1.2);
+    opacity: 0.5;
+  }
+  
+  100% {
+    transform: scaleY(0.7) scaleX(0.5);
+    opacity: 0;
+  }
+} 
